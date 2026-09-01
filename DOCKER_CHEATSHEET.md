@@ -30,10 +30,29 @@ Now you're inside the container. All paths inside are `/home/yocto/project/...`
 
 ## Inside the Container
 
+### If Poky Already Cloned (on host)
+
+If you cloned Poky on your Mac (recommended), it's already visible:
+
 ```bash
-# Clone Poky
+# Poky is already here via volume mount!
+cd /home/yocto/project/poky
+source oe-init-build-env ../build
+cd ../build
+```
+
+**See DOCKER_HOST_SETUP.md if git clone hung in container!**
+
+### Clone Poky Inside Container
+
+If you didn't clone on host:
+
+```bash
+# Clone Poky (may hang if network issues)
 cd /home/yocto/project
 git clone git://git.yoctoproject.org/poky -b scarthgap
+# Or use HTTPS if git:// doesn't work:
+git clone https://git.yoctoproject.org/poky -b scarthgap
 
 # Initialize build
 cd poky

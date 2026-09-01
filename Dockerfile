@@ -15,6 +15,11 @@ LABEL description="Complete Yocto build environment with Qt5 support"
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Set locale for Yocto (required for bitbake)
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV LANGUAGE=en_US.UTF-8
+
 # Install all Yocto build dependencies in one layer (reduces image size)
 RUN apt-get update && apt-get install -y \
     # Version control
@@ -61,9 +66,14 @@ RUN apt-get update && apt-get install -y \
     nano \
     less \
     ipython3 \
+    locales \
     \
     # Cleanup
     && rm -rf /var/lib/apt/lists/*
+
+# Generate UTF-8 locale (required for Yocto/BitBake)
+RUN locale-gen en_US.UTF-8 && \
+    update-locale LANG=en_US.UTF-8
 
 # Create non-root user for builds (Yocto best practice)
 # This prevents permission issues and is more secure

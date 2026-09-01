@@ -54,18 +54,23 @@ cpp-yocto/
 ### Option A: Docker (Works on macOS, Windows, Linux)
 
 ```bash
-# 1. Build Docker image
+# 1. Build Docker image (one-time, ~20 min)
 cd /Users/tfahey/github/cpp-yocto
 docker build -t yocto-qt-builder:latest .
 
-# 2. Start container
+# 2. Clone Poky on your Mac (this works reliably!)
+git clone https://git.yoctoproject.org/poky -b scarthgap
+
+# 3. Start container (Poky is auto-shared via volume mount)
 docker run -it \
   --name yocto-build \
   -v /Users/tfahey/github/cpp-yocto:/home/yocto/project \
   yocto-qt-builder:latest
 
-# 3-6: Inside container, follow Option B below!
+# 4-6: Inside container, follow Option B steps 2-5 below!
 ```
+
+**Pro tip:** If `git clone` hangs inside container, clone Poky on your Mac first. The volume mount shares it automatically! See [DOCKER_HOST_SETUP.md](DOCKER_HOST_SETUP.md)
 
 **For detailed Docker instructions:** See [DOCKER_BUILD.md](DOCKER_BUILD.md)
 

@@ -188,18 +188,39 @@ docker exec -it yocto-build bash
 
 ---
 
-## Step 4: Initialize Yocto (Inside Container)
+## Step 4: Clone Poky (Host or Container)
+
+### Option A: Clone on Host Mac (Recommended if git hangs in container)
+
+If `git clone` hangs inside the container, clone on your Mac instead:
+
+```bash
+# On your Mac (host)
+cd /Users/tfahey/github/cpp-yocto
+git clone https://git.yoctoproject.org/poky -b scarthgap
+```
+
+The volume mount shares it automatically with the container!
+
+**See [DOCKER_HOST_SETUP.md](DOCKER_HOST_SETUP.md) for details on this approach.**
+
+### Option B: Clone Inside Container
 
 **Inside the Docker container**, run:
 
 ```bash
 cd /home/yocto/project
 git clone git://git.yoctoproject.org/poky -b scarthgap
+# Or if git:// doesn't work:
+git clone https://git.yoctoproject.org/poky -b scarthgap
 cd poky
 source oe-init-build-env ../build
 ```
 
-This is identical to the native build process!
+**Troubleshooting container git:**
+- If git clone hangs, use Option A (clone on host)
+- If git:// protocol times out, try https:// instead
+- See [DOCKER_HOST_SETUP.md](DOCKER_HOST_SETUP.md) for network troubleshooting
 
 ---
 
