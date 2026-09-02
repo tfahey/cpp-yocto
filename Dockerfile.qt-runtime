@@ -1,0 +1,46 @@
+# Dockerfile for running Qt5 applications built with Yocto
+#
+# Usage:
+#   docker build -f Dockerfile.qt-runtime -t qt5-runtime:latest .
+#   docker run -v /Users/tfahey/github/cpp-yocto/hello-world-output:/app qt5-runtime:latest
+#
+
+FROM ubuntu:20.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Qt5 runtime libraries
+RUN apt-get update && apt-get install -y \
+    libqt5core5a \
+    libqt5gui5 \
+    libqt5widgets5 \
+    libqt5qml5 \
+    libqt5quick5 \
+    libqt5network5 \
+    libqt5sql5 \
+    libqt5dbus5 \
+    libqt5printsupport5 \
+    libgl1-mesa-glx \
+    libxkbcommon-x11-0 \
+    libfontconfig1 \
+    libfreetype6 \
+    libx11-6 \
+    libxext6 \
+    libxrender1 \
+    libdbus-1-3 \
+    # Additional dependencies that might be needed
+    libstdc++6 \
+    libc6 \
+    # Cleanup
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create app directory
+WORKDIR /app
+
+# Set library path
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+
+# Default command - run the hello-world app
+ENTRYPOINT ["/app/hello-world"]
