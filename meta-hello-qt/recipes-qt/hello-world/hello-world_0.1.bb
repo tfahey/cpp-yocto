@@ -4,6 +4,9 @@ HOMEPAGE = "https://github.com/example/hello-world"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade40b038a0e81c15672faf6e3c1"
 
+# Use FILESEXTRAPATHS to help BitBake find the source files
+FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}-${PV}:"
+
 SRC_URI = "file://CMakeLists.txt \
            file://main.cpp \
            file://mainwindow.h \
@@ -14,7 +17,7 @@ S = "${WORKDIR}"
 # Inherit cmake class for CMake-based projects
 inherit cmake
 
-# Qt5 dependencies
-DEPENDS = "qt5-qmake-native qt5-base qt5-declarative"
+# Qt5 dependencies (using meta-qt5 package names)
+DEPENDS = "qtbase-native qtbase qtdeclarative"
 
-RDEPENDS:${PN} = "qt5-core qt5-gui qt5-widgets"
+RDEPENDS:${PN} = "qtbase-core qtbase-gui qtbase-widgets"
