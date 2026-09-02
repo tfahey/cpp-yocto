@@ -15,9 +15,10 @@ SRC_URI = "file://CMakeLists.txt \
 S = "${WORKDIR}"
 
 # Inherit cmake class for CMake-based projects
-inherit cmake
+inherit cmake cmake_qt5
 
-# Qt5 dependencies (using meta-qt5 package names)
-DEPENDS = "qtbase-native qtbase qtdeclarative"
+# Qt5 dependencies - simplified for meta-qt5
+# cmake_qt5 class handles most of the Qt5 setup
+DEPENDS = "qtbase-native qtdeclarative-native"
 
-RDEPENDS:${PN} = "qtbase-core qtbase-gui qtbase-widgets"
+RDEPENDS:${PN} = "qtbase qtdeclarative"
