@@ -70,6 +70,27 @@ This class exists specifically to handle the complexity we were trying to do man
 
 ---
 
+## Diagnostic Tool
+
+The `DIAGNOSE_QTBASE.sh` script automates verification of the layer setup and recipe availability:
+
+```bash
+# Inside Docker container, in the build directory
+bash /home/yocto/project/DIAGNOSE_QTBASE.sh
+```
+
+This script checks:
+- Layer registration (meta-oe, meta-qt5, meta-hello-qt loaded)
+- QtBase recipes availability
+- qtbase-gui recipe present
+- Machine configuration
+- Layer dependency order
+- Recipe parseability
+
+Use this to validate your setup before attempting a build.
+
+---
+
 ## Verification Results
 
 ### ✅ Parse Test
