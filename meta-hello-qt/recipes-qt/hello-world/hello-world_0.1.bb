@@ -2,7 +2,7 @@ SUMMARY = "Hello World Qt Application"
 DESCRIPTION = "A simple Qt5 GUI application for learning Yocto"
 HOMEPAGE = "https://github.com/example/hello-world"
 LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade40b038a0e81c15672faf6e3c1"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
 # Use FILESEXTRAPATHS to help BitBake find the source files
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}-${PV}:"
