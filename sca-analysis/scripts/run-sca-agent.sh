@@ -67,14 +67,16 @@ if [ "$SCAN_MODE" = "online" ]; then
     echo "🌐 Online Scan Mode - Uploading to Veracode"
     echo "==========================================="
 
-    # Install agent if not present
-    if ! command -v agent &> /dev/null; then
-        echo "📥 Installing Veracode SCA Agent..."
-        pip install --upgrade veracode-python-sca || {
-            echo "❌ Failed to install agent"
-            echo "   Try manual installation: pip install veracode-python-sca"
-            exit 1
-        }
+    # Check if srcclr CLI is available
+    if ! command -v srcclr &> /dev/null; then
+        echo "❌ srcclr CLI not found"
+        echo ""
+        echo "Please download and install the SCA Agent from:"
+        echo "  https://docs.veracode.com/r/Integrate_SCA_agents"
+        echo ""
+        echo "Or add the agent to your PATH:"
+        echo "  export PATH=\"\$PATH:/path/to/agent\""
+        exit 1
     fi
 
     # Get application details

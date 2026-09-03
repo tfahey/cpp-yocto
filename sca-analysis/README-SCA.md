@@ -99,16 +99,16 @@ srcclr scan --allow-dirty
 
 ## SCA Agent Installation & Usage
 
-### Option 1: Using pip (SRCCLR CLI - Recommended)
+### Option 1: Download from Veracode
+
+Download and install the SCA Agent from the official Veracode documentation:
 
 ```bash
-# Install the Veracode SCA CLI agent
-pip install veracode-python-sca
+# See download and installation instructions at:
+# https://docs.veracode.com/r/Integrate_SCA_agents
 
-# Verify installation
+# After installation, verify it's in your PATH:
 srcclr --version
-
-# Or use: veracode-sca --version
 ```
 
 ### Option 2: Using Docker
@@ -426,8 +426,11 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       
-      - name: Install Veracode SCA CLI
-        run: pip install veracode-python-sca
+      - name: Download Veracode SCA Agent
+        run: |
+          # Download agent per instructions at:
+          # https://docs.veracode.com/r/Integrate_SCA_agents
+          # Then add to PATH or run directly
       
       - name: Run Veracode SCA with SRCCLR Token
         env:
@@ -467,8 +470,8 @@ veracode-sca:
   stage: scan
   image: ubuntu:22.04
   before_script:
-    - apt-get update && apt-get install -y python3 pip
-    - pip install veracode-python-sca
+    # Download agent per: https://docs.veracode.com/r/Integrate_SCA_agents
+    # Add downloaded agent to PATH
   script:
     - export SRCCLR_API_TOKEN="${SRCCLR_API_TOKEN}"
     - srcclr scan 
@@ -498,7 +501,8 @@ pipeline {
         stage('Setup') {
             steps {
                 sh '''
-                    pip install veracode-python-sca
+                    # Download agent per: "https://docs.veracode.com/r/Integrate_SCA_agents"
+                    # Verify agent is in PATH
                     srcclr --version
                 '''
             }
@@ -568,8 +572,11 @@ bash scripts/generate-sbom.sh
 
 ### "No agent found"
 ```bash
-# Download or install agent
-pip install veracode-python-sca
+# Download agent from:
+# https://docs.veracode.com/r/Integrate_SCA_agents
+
+# Then add to PATH or run directly:
+export PATH="$PATH:/path/to/srcclr"
 ```
 
 ### "Authentication failed"
