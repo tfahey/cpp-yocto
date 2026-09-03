@@ -1,0 +1,132 @@
+# Veracode SCA Configuration
+# Configure scanning parameters and reporting
+
+scan:
+  # Application identifier
+  app_name: "Qt5-HelloWorld"
+  app_version: "1.0"
+
+  # Scan configuration
+  source_directories:
+    - "."
+    - "../meta-hello-qt"
+    - "../build/conf"
+
+  exclude_patterns:
+    - "build/**"
+    - "*.git/**"
+    - "poky/**"
+    - "meta-openembedded/**"
+    - "meta-qt5/**"
+    - ".docker/**"
+    - "hello-world-output/**"
+
+  # Component detection
+  component_detection:
+    enabled: true
+    recursion_depth: 5
+
+    # Package managers to check
+    package_managers:
+      - cmake
+      - pkg-config
+      - dpkg
+      - rpm
+      - python_pip
+
+  # Vulnerability settings
+  vulnerability:
+    # Minimum severity to report
+    minimum_severity: "MEDIUM"
+    # Include/exclude specific CVE IDs
+    include_cves: []
+    exclude_cves: []
+
+  # Licensing
+  license_scanning:
+    enabled: true
+    # Restrict to specific license types
+    restricted_licenses:
+      - "GPL-3.0"
+      - "AGPL-3.0"
+
+# Reporting configuration
+reporting:
+  output_format: "json"
+  output_file: "results/sca-report.json"
+
+  # Report formats to generate
+  formats:
+    - json
+    - xml
+    - spdx
+    - cyclonedx
+
+  # Include detailed information
+  include_details: true
+  include_recommendations: true
+
+  # SBOM generation
+  sbom:
+    enabled: true
+    format: "cyclonedx"
+    include_licenses: true
+    include_cpes: true
+
+# API settings
+api:
+  base_url: "https://api.veracode.com"
+  timeout: 300
+  retries: 3
+
+  # Rate limiting
+  rate_limit:
+    max_concurrent_requests: 5
+    request_timeout: 30
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/sca-scan.log"
+  console: true
+
+  # Include verbose output
+  verbose: false
+
+# Policy enforcement (optional)
+policy:
+  # Fail scan if conditions met
+  fail_on:
+    critical_found: true
+    high_count_threshold: 5
+    medium_count_threshold: 20
+
+  # Custom policy rules
+  rules:
+    - rule_id: "qt5-lts-required"
+      description: "Qt5 version must be LTS (5.15.x)"
+      component: "qtbase"
+      version_pattern: "5.15.*"
+
+    - rule_id: "glibc-security-update"
+      description: "glibc must be 2.34 or newer"
+      component: "glibc"
+      version_pattern: "2.3[4-9].*|2.[4-9].*"
+
+# Notifications (optional)
+notifications:
+  email:
+    enabled: false
+    recipients:
+      - "security@example.com"
+    on_events:
+      - "scan_complete"
+      - "critical_found"
+
+  # Webhook for automation
+  webhook:
+    enabled: false
+    url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    events:
+      - "scan_complete"
+      - "vulnerabilities_found"
