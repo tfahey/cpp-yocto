@@ -63,12 +63,12 @@ Qt5 dependencies include:
 
 ## Quick Start: Running SCA Scan
 
-### 1. Setup Veracode Credentials
+### 1. Setup SRCCLR_API_TOKEN
 
-**Option A: Using SRCCLR_API_TOKEN (Recommended - Simpler)**
+The SCA Agent requires the SRCCLR_API_TOKEN for authentication.
 
 ```bash
-# Set the API token as environment variable
+# Set the token as environment variable
 export SRCCLR_API_TOKEN="<YOUR_SRCCLR_API_TOKEN>"
 
 # Verify token is set
@@ -77,27 +77,6 @@ echo $SRCCLR_API_TOKEN
 # Optional: Make permanent (add to ~/.bashrc or ~/.zshrc)
 echo 'export SRCCLR_API_TOKEN="<YOUR_SRCCLR_API_TOKEN>"' >> ~/.bashrc
 source ~/.bashrc
-```
-
-**Option B: Using API ID/Secret (Traditional)**
-
-```bash
-# Create credentials file
-cat > ~/.veracode/.credentials << 'EOF'
-[DEFAULT]
-veracode_api_key_id = <YOUR_API_ID>
-veracode_api_key_secret = <YOUR_API_SECRET>
-veracode_base_url = https://api.veracode.com
-EOF
-
-chmod 600 ~/.veracode/.credentials
-```
-
-**Option C: Using Environment Variables (API ID/Secret)**
-
-```bash
-export VERACODE_API_ID="<YOUR_API_ID>"
-export VERACODE_API_KEY="<YOUR_API_SECRET>"
 ```
 
 ### 2. Generate Dependency Information
@@ -111,15 +90,11 @@ bash scripts/generate-sbom.sh
 ### 3. Run SCA Agent
 
 ```bash
-# Automated approach (auto-detects credentials)
-bash scripts/run-sca-agent.sh
+# Ensure SRCCLR_API_TOKEN is set
+export SRCCLR_API_TOKEN="<YOUR_SRCCLR_API_TOKEN>"
 
-# Manual approach with SRCCLR_API_TOKEN
-export SRCCLR_API_TOKEN="<YOUR_TOKEN>"
+# Run the scan
 srcclr scan --allow-dirty
-
-# Manual approach with API ID/Secret
-bash scripts/upload-to-veracode.sh <APP_NAME> <SCAN_NAME>
 ```
 
 ## SCA Agent Installation & Usage
@@ -139,20 +114,12 @@ srcclr --version
 ### Option 2: Using Docker
 
 ```bash
+export SRCCLR_API_TOKEN="<YOUR_SRCCLR_API_TOKEN>"
+
 docker run --rm \
   -v $(pwd):/workspace \
-  -e SRCCLR_API_TOKEN=<YOUR_SRCCLR_API_TOKEN> \
+  -e SRCCLR_API_TOKEN=$SRCCLR_API_TOKEN \
   veracode/sca:latest scan --source-dir /workspace
-```
-
-### Option 3: Download from Veracode
-
-```bash
-# Download agent from Veracode portal
-# https://docs.veracode.com/r/c_SCA_Agent
-
-# Extract and run
-./agent -sf . -o sca-results.json
 ```
 
 ## Using SCA CLI Agent with SRCCLR_API_TOKEN
@@ -490,34 +457,6 @@ jobs:
           fi
 ```
 
-### GitHub Actions Example (with API ID/Secret)
-
-```yaml
-name: Veracode SCA Scan (API Auth)
-on: [push, pull_request]
-
-jobs:
-  sca-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      
-      - name: Run Veracode SCA
-        env:
-          VERACODE_API_ID: ${{ secrets.VERACODE_API_ID }}
-          VERACODE_API_KEY: ${{ secrets.VERACODE_API_KEY }}
-        run: |
-          cd sca-analysis
-          bash scripts/run-sca-agent.sh
-          
-      - name: Upload Results
-        if: always()
-        uses: actions/upload-artifact@v2
-        with:
-          name: sca-results
-          path: sca-analysis/results/
-```
-
 ### GitLab CI Example (with SRCCLR_API_TOKEN)
 
 ```yaml
@@ -544,20 +483,6 @@ veracode-sca:
       dependency_scanning: sca-report.json
 ```
 
-### GitLab CI Example (with API ID/Secret)
-
-```yaml
-veracode-sca:
-  image: ubuntu:22.04
-  script:
-    - cd sca-analysis
-    - bash scripts/run-sca-agent.sh
-  artifacts:
-    paths:
-      - sca-analysis/results/
-    reports:
-      dependency_scanning: sca-analysis/results/sca-report.json
-```
 
 ### Jenkins Pipeline Example (with SRCCLR_API_TOKEN)
 
@@ -637,9 +562,6 @@ pipeline {
 # Generate CycloneDX SBOM for compliance
 cd sca-analysis
 bash scripts/generate-sbom.sh
-
-# Upload to Veracode for formal reporting
-bash scripts/upload-to-veracode.sh
 ```
 
 ## Troubleshooting
@@ -652,11 +574,14 @@ pip install veracode-python-sca
 
 ### "Authentication failed"
 ```bash
-# Verify credentials
-cat ~/.veracode/.credentials
+# Verify SRCCLR_API_TOKEN is set
+echo $SRCCLR_API_TOKEN
 
-# Test connectivity
-curl -u $VERACODE_API_ID:$VERACODE_API_KEY https://api.veracode.com/
+# If empty, set it
+export SRCCLR_API_TOKEN="<your_token>"
+
+# Test token by running a dry-run scan
+srcclr scan --dry-run
 ```
 
 ### "No dependencies detected"
