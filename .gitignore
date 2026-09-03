@@ -1,0 +1,27 @@
+# Build artifacts
+hello-world-output/
+build/tmp/
+build/cache/
+build/downloads/
+build/sstate-cache/
+build-arm64/
+build-x86-64/
+build/bitbake*.log
+build/bitbake.lock
+
+# Docker/system
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Large directories we'll clone separately
+poky/
+meta-openembedded/
+meta-qt5/
+
+# Claude workspace
+.claude/
+
+# Preprocessed sources (if large)
+preprocessed-src/

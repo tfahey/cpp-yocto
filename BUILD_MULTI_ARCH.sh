@@ -67,8 +67,8 @@ EOF
     TEMP_ARTIFACTS=$(mktemp -d)
     trap "rm -rf $TEMP_ARTIFACTS" EXIT
 
-    # Run build in Docker
-    docker run --rm \
+    # Run build in Docker (WITHOUT --rm so we can extract artifacts)
+    CONTAINER_ID=$(docker run -d \
         -v "$SCRIPT_DIR:/home/yocto/project" \
         -v "$TEMP_ARTIFACTS:/tmp/artifacts" \
         yocto-qt-builder:latest \

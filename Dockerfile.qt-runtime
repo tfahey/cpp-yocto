@@ -5,7 +5,7 @@
 #   docker run -v /Users/tfahey/github/cpp-yocto/hello-world-output:/app qt5-runtime:latest
 #
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -39,8 +39,8 @@ RUN apt-get update && apt-get install -y \
 # Create app directory
 WORKDIR /app
 
-# Set library path
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+# Set library path (no need to append, Ubuntu's default paths are fine)
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
 
 # Default command - run the hello-world app
 ENTRYPOINT ["/app/hello-world"]
