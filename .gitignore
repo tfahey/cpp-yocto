@@ -22,6 +22,3 @@ meta-qt5/
 
 # Claude workspace
 .claude/
-
-# Preprocessed sources (if large)
-preprocessed-src/
