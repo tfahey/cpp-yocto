@@ -18,36 +18,18 @@ mkdir -p "$RESULTS_DIR"
 # Check prerequisites
 echo "📋 Checking prerequisites..."
 
-# Check if credentials are configured
-if [ -z "$VERACODE_API_ID" ] && [ -z "$VERACODE_API_KEY" ]; then
-    if [ -f "$HOME/.veracode/.credentials" ]; then
-        echo "✅ Found credentials file: $HOME/.veracode/.credentials"
-        # Source credentials
-        source "$HOME/.veracode/.credentials" || source "$(grep -v '^#' $HOME/.veracode/.credentials | cut -d= -f1 | tr '\n' ' ')" || true
-    else
-        echo "❌ ERROR: Veracode credentials not found"
-        echo ""
-        echo "Please set up credentials:"
-        echo "  mkdir -p ~/.veracode"
-        echo "  cat > ~/.veracode/.credentials << 'EOF'"
-        echo "  [DEFAULT]"
-        echo "  veracode_api_key_id = <YOUR_API_ID>"
-        echo "  veracode_api_key_secret = <YOUR_API_SECRET>"
-        echo "  veracode_base_url = https://api.veracode.com"
-        echo "  EOF"
-        echo "  chmod 600 ~/.veracode/.credentials"
-        exit 1
-    fi
-fi
-
-# Verify API credentials work
-echo "🔑 Verifying Veracode API credentials..."
-CRED_TEST=$(curl -s -u "$VERACODE_API_ID:$VERACODE_API_KEY" https://api.veracode.com/api/authn/verifycredentials 2>/dev/null | grep -c '"valid":true' || echo "0")
-
-if [ "$CRED_TEST" -eq 1 ]; then
-    echo "✅ Credentials verified"
+# Check if SRCCLR_API_TOKEN is configured
+if [ -z "$SRCCLR_API_TOKEN" ]; then
+    echo "❌ ERROR: SRCCLR_API_TOKEN not found"
+    echo ""
+    echo "Please set up the token:"
+    echo "  export SRCCLR_API_TOKEN='<YOUR_SRCCLR_API_TOKEN>'"
+    echo ""
+    echo "Or add to your shell profile (~/.bashrc or ~/.zshrc):"
+    echo "  echo 'export SRCCLR_API_TOKEN=\"<YOUR_SRCCLR_API_TOKEN>\"' >> ~/.bashrc"
+    exit 1
 else
-    echo "⚠️  Could not verify credentials (may still work offline)"
+    echo "✅ SRCCLR_API_TOKEN is configured"
 fi
 
 echo ""
@@ -185,8 +167,7 @@ LOW RISK - This application has:
 
 For detailed CVE scanning:
 1. Use Veracode online SCA agent
-2. Or use free tools: snyk.io, dependencycheck
-3. Generate formal SBOM: Run generate-sbom.sh
+2. Generate formal SBOM: Run generate-sbom.sh
 EOF
 
     echo "✅ Offline analysis complete"
@@ -212,8 +193,7 @@ elif [ "$SCAN_MODE" = "docker" ]; then
     # Create Docker run command
     docker run --rm \
       -v "$(cd ../.. && pwd):/workspace" \
-      -e VERACODE_API_ID="$VERACODE_API_ID" \
-      -e VERACODE_API_KEY="$VERACODE_API_KEY" \
+      -e SRCCLR_API_TOKEN="$SRCCLR_API_TOKEN" \
       -e "SCAN_NAME=Qt5-HelloWorld-$(date +%Y%m%d)" \
       veracode/sca:latest \
       scan --source-dir /workspace \
