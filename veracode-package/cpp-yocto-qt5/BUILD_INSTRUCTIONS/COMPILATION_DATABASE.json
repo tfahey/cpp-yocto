@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "/work/cpp-yocto-qt5",
+    "command": "g++ -c -I/usr/include/qt5 -I/usr/include/qt5/QtCore -I/usr/include/qt5/QtGui -I/usr/include/qt5/QtWidgets -O2 main.cpp -o main.o",
+    "file": "main.cpp"
+  },
+  {
+    "directory": "/work/cpp-yocto-qt5",
+    "command": "g++ -c -I/usr/include/qt5 -I/usr/include/qt5/QtCore -I/usr/include/qt5/QtGui -I/usr/include/qt5/QtWidgets -O2 mainwindow.cpp -o mainwindow.o",
+    "file": "mainwindow.cpp"
+  }
+]

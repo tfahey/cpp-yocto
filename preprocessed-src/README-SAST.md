@@ -217,17 +217,86 @@ BUILD_STATUS=Production Ready
 EOF
 ```
 
-### Step 5: Create Archive for Upload
-```bash
-# Create a zip archive for uploading to Veracode
+### Step 4b: Create veracode.json Configuration File
 
+**IMPORTANT:** Veracode requires a `veracode.json` configuration file at the root of your package. This file tells Veracode about your build configuration and analysis parameters.
+
+```bash
+cat > veracode-package/cpp-yocto-qt5/veracode.json << 'EOF'
+{
+  "version": 1,
+  "buildConfiguration": {
+    "compiler": {
+      "name": "g++",
+      "version": "9.4.0",
+      "architecture": "arm64",
+      "options": "-std=c++11 -O2"
+    }
+  },
+  "static_scan": {
+    "auto_scan": true,
+    "market_place": [],
+    "manual_scan": {
+      "working_directory": ".",
+      "excluded_directories": [
+        "build",
+        ".git",
+        "cmake-build-debug",
+        "cmake-build-release"
+      ]
+    }
+  },
+  "type": "policy",
+  "policy_file": null,
+  "include_patterns": [
+    "*.cpp",
+    "*.h",
+    "*.i"
+  ],
+  "exclude_patterns": [
+    "*.o",
+    "*.so",
+    "*.a",
+    "*.bin",
+    "*~",
+    "*.swp"
+  ],
+  "project_info": {
+    "name": "Qt5-HelloWorld-Yocto",
+    "version": "1.0",
+    "language": "C++",
+    "framework": "Qt5"
+  }
+}
+EOF
+```
+
+**Configuration Details:**
+- `compiler.version`: GCC 9.4.0 (from Ubuntu 20.04 Docker base image)
+- `compiler.options`: `-std=c++11 -O2` (C++11 standard with production optimization flags)
+- `include_patterns`: Scans C++ source (.cpp, .h) and preprocessed files (.i)
+- `exclude_patterns`: Excludes build artifacts, compiled objects, and temporary files
+- `excluded_directories`: Skips build output and version control directories
+
+### Step 5: Create Archive for Upload
+
+**Important:** Verify that `veracode.json` is in your package directory before creating the archive. Veracode will reject submissions without this configuration file.
+
+```bash
+# Verify veracode.json exists
+ls -la veracode-package/cpp-yocto-qt5/veracode.json
+
+# Create a zip archive for uploading to Veracode
 cd veracode-package
 zip -r cpp-yocto-qt5-veracode.zip cpp-yocto-qt5/
 
 # For large projects, can also use tar.gz:
 # tar -czf cpp-yocto-qt5-veracode.tar.gz cpp-yocto-qt5/
 
-# Verify archive contents
+# Verify archive contains veracode.json
+unzip -l cpp-yocto-qt5-veracode.zip | grep veracode.json
+
+# View first 20 files in archive
 unzip -l cpp-yocto-qt5-veracode.zip | head -20
 ```
 

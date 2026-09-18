@@ -1,0 +1,45 @@
+{
+  "buildConfiguration" : {
+    "compiler" : {
+      "name" : "g++",
+      "version" : "9.4.0",
+      "architecture" : "arm64",
+      "options" : "-std=c++11 -O2"
+    }
+  },
+  "version": 1,
+  "static_scan": {
+    "auto_scan": true,
+    "market_place": [],
+    "manual_scan": {
+      "working_directory": ".",
+      "excluded_directories": [
+        "build",
+        ".git",
+        "cmake-build-debug",
+        "cmake-build-release"
+      ]
+    }
+  },
+  "type": "policy",
+  "policy_file": null,
+  "include_patterns": [
+    "*.cpp",
+    "*.h",
+    "*.i"
+  ],
+  "exclude_patterns": [
+    "*.o",
+    "*.so",
+    "*.a",
+    "*.bin",
+    "*~",
+    "*.swp"
+  ],
+  "project_info": {
+    "name": "Qt5-HelloWorld-Yocto",
+    "version": "1.0",
+    "language": "C++",
+    "framework": "Qt5"
+  }
+}

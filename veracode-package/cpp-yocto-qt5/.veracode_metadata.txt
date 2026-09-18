@@ -1,0 +1,11 @@
+PROJECT_NAME=Qt5-HelloWorld-Yocto
+VERSION=1.0
+LANGUAGE=C++
+BUILD_SYSTEM=CMake/Yocto
+FRAMEWORKS=Qt5
+ARCHITECTURE=Multi-arch (x86-64, ARM64)
+COMPILATION_UNITS=2 (main.cpp, mainwindow.cpp)
+HEADER_FILES=1 (mainwindow.h)
+THIRD_PARTY=Qt5 libraries (included in framework)
+BUILD_DATE=2026-09-03
+BUILD_STATUS=Production Ready
