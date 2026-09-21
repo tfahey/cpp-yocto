@@ -11,13 +11,22 @@ class MainWindow : public QMainWindow
 
 public:
     MainWindow();
+    ~MainWindow();
 
 private slots:
     void onButtonClicked();
 
 private:
+    void updateCounterDisplay(int count);
+
     QLabel *label;
     QPushButton *button;
+
+    // [INTENTIONAL SECURITY FLAW] CWE-457: Uninitialized variable
+    int m_lastClickTime;
+
+    // [INTENTIONAL SECURITY FLAW] CWE-401: Potential resource leak
+    char *m_tempBuffer;
 };
 
 #endif // MAINWINDOW_H
