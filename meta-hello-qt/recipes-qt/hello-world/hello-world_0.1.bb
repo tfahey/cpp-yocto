@@ -19,6 +19,9 @@ inherit cmake cmake_qt5
 
 # Qt5 dependencies - simplified for meta-qt5
 # cmake_qt5 class handles most of the Qt5 setup
-DEPENDS = "qtbase-native qtdeclarative-native"
+DEPENDS = "qtbase qtdeclarative"
 
 RDEPENDS:${PN} = "qtbase qtdeclarative"
+
+# Explicitly define what files to package
+FILES:${PN} = "${bindir}/hello-world"

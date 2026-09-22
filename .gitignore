@@ -6,6 +6,7 @@ build/downloads/
 build/sstate-cache/
 build-arm64/
 build-x86-64/
+.yocto-cache/
 build/bitbake*.log
 build/bitbake.lock
 

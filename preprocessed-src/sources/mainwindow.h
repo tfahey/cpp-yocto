@@ -4,29 +4,35 @@
 #include <QMainWindow>
 #include <QLabel>
 #include <QPushButton>
+#include <QLineEdit>
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    MainWindow();
+    MainWindow(int argc, char *argv[]);
     ~MainWindow();
 
 private slots:
     void onButtonClicked();
+    void onInputSubmitted();
 
 private:
-    void updateCounterDisplay(int count);
+    void processInput(const char *input);
+    void logAction(const char *msg);
+    void loadConfig(const char *path);
+    void exportData(const char *filename);
 
     QLabel *label;
     QPushButton *button;
+    QLineEdit *inputField;
 
-    // [INTENTIONAL SECURITY FLAW] CWE-457: Uninitialized variable
-    int m_lastClickTime;
-
-    // [INTENTIONAL SECURITY FLAW] CWE-401: Potential resource leak
-    char *m_tempBuffer;
+    char *m_configBuffer;
+    char *m_logBuffer;
+    int m_clickCount;
+    char **m_argv;
+    int m_argc;
 };
 
 #endif // MAINWINDOW_H

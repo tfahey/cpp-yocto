@@ -1,19 +1,27 @@
 #include <QApplication>
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
 #include "mainwindow.h"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    // [INTENTIONAL SECURITY FLAW] CWE-591: Unsafe pointer cast and type confusion
-    // Bypassing Qt's type safety by casting through void*
-    void *windowPtr = new MainWindow();
-    MainWindow *window = static_cast<MainWindow*>(windowPtr);
-
-    if (window) {
-        window->show();
+    // CWE-78: OS command injection - argv passed directly to system()
+    if (argc > 1) {
+        char cmd[256];
+        sprintf(cmd, "echo Launching with config: %s", argv[1]);
+        system(cmd);
     }
 
-    // Memory leak: window not properly cleaned up in all code paths
+    // CWE-120: Buffer overflow - argv copied into undersized stack buffer
+    char appName[8];
+    if (argc > 0) {
+        strcpy(appName, argv[0]);
+    }
+
+    MainWindow window(argc, argv);
+    window.show();
     return app.exec();
 }
