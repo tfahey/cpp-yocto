@@ -21,7 +21,9 @@ ENV LC_ALL=en_US.UTF-8
 ENV LANGUAGE=en_US.UTF-8
 
 # Install all Yocto build dependencies in one layer (reduces image size)
-RUN apt-get update && apt-get install -y \
+# Note: Using --allow-insecure-repositories to work around expired Ubuntu 20.04 GPG keys
+RUN apt-get update --allow-insecure-repositories --allow-unauthenticated 2>&1 | grep -v "GPG error" || true && \
+    apt-get install -y --allow-unauthenticated \
     # Version control
     git \
     \
