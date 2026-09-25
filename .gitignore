@@ -7,6 +7,7 @@ build/sstate-cache/
 build-arm64/
 build-x86-64/
 .yocto-cache/
+preprocessed-src/sources/*.i
 build/bitbake*.log
 build/bitbake.lock
 

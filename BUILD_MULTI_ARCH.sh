@@ -37,7 +37,7 @@ build_architecture() {
     local MACHINE=$1
     local ARCH_NAME=$2
     local BUILD_DIR="$SCRIPT_DIR/build-$ARCH_NAME"
-    local TMP_BUILD="/tmp/yocto-build-$ARCH_NAME"
+    local YOCTO_TMP_VOLUME="yocto-tmp-$ARCH_NAME"
     local OUTPUT_SUBDIR="$OUTPUT_DIR"
 
     if [ "$ARCH_NAME" != "x86-64" ]; then
@@ -53,6 +53,11 @@ build_architecture() {
 
     # Create build directory
     mkdir -p "$BUILD_DIR/conf"
+    docker volume create "$YOCTO_TMP_VOLUME" >/dev/null
+    docker run --rm --user root \
+        --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/mnt,volume-nocopy" \
+        yocto-qt-builder:latest \
+        chown -R yocto:yocto /mnt
 
     # Copy bblayers.conf
     cp "$SCRIPT_DIR/build/conf/bblayers.conf" "$BUILD_DIR/conf/" 2>/dev/null || \
@@ -61,7 +66,7 @@ build_architecture() {
     # Create local.conf for this architecture
     cat > "$BUILD_DIR/conf/local.conf" << EOF
 MACHINE = "$MACHINE"
-TMPDIR = "$TMP_BUILD/tmp"
+TMPDIR = "/home/yocto/cache/tmp-$ARCH_NAME"
 IMAGE_INSTALL:append = " hello-world"
 EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
 USER_CLASSES ?= "buildstats"
@@ -90,7 +95,9 @@ CONF_VERSION = "2"
 EOF
 
     # Create temporary directory for artifact transfer
-    TEMP_ARTIFACTS=$(mktemp -d)
+    TEMP_ARTIFACTS="$SCRIPT_DIR/.yocto-cache/artifacts-$ARCH_NAME"
+    mkdir -p "$TEMP_ARTIFACTS"
+    rm -f "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME"
     trap "rm -rf $TEMP_ARTIFACTS" EXIT
 
     # Run build in Docker (interactive mode to see output, wait for completion)
@@ -100,9 +107,9 @@ EOF
         -m 7g \
         --memory-swap 9g \
         -v "$SCRIPT_DIR:/home/yocto/project" \
-        -v "$TEMP_ARTIFACTS:/tmp/artifacts" \
         -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
         -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache" \
+        --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
         yocto-qt-builder:latest \
         bash -c "
             cd /tmp
@@ -112,6 +119,7 @@ EOF
             # Setup
             cp -r /home/yocto/project/build-$ARCH_NAME/conf .
             source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
+            TMP_ROOT=\"/home/yocto/cache/tmp-$ARCH_NAME-glibc\"
 
             # Show config
             echo '=== Build Configuration ==='
@@ -135,35 +143,35 @@ EOF
 
                 # Check in image directory (installed binary)
                 if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find tmp*/work -path '*/image/usr/bin/hello-world' -type f 2>/dev/null); do
+                    for F in \$(find \"\$TMP_ROOT/work\" -path '*/image/usr/bin/hello-world' -type f 2>/dev/null); do
                         if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
                     done
                 fi
 
                 # Check in package directory
                 if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find tmp*/work -path '*/package/usr/bin/hello-world' -type f 2>/dev/null); do
+                    for F in \$(find \"\$TMP_ROOT/work\" -path '*/package/usr/bin/hello-world' -type f 2>/dev/null); do
                         if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
                     done
                 fi
 
                 # Check in build directory
                 if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find tmp*/work -path '*/build/hello-world' -type f 2>/dev/null); do
+                    for F in \$(find \"\$TMP_ROOT/work\" -path '*/build/hello-world' -type f 2>/dev/null); do
                         if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
                     done
                 fi
 
                 # Fallback: any ELF file named hello-world in the build tree
                 if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find tmp* -type f -name 'hello-world' ! -name '*.so' ! -name '*.a' ! -name '*.o' ! -name '*.ipk' 2>/dev/null); do
+                    for F in \$(find \"\$TMP_ROOT\" -type f -name 'hello-world' ! -name '*.so' ! -name '*.a' ! -name '*.o' ! -name '*.ipk' 2>/dev/null); do
                         if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
                     done
                 fi
 
                 # Fallback: extract binary from IPK package
                 if [ -z \"\$BINARY\" ]; then
-                    IPK=\$(find \$(pwd)/tmp* -path '*/deploy/ipk/*/hello-world_*.ipk' -type f 2>/dev/null | grep -v '\-dbg\|\-dev\|\-src' | head -1)
+                    IPK=\$(find \"\$TMP_ROOT/deploy/ipk\" -path '*/hello-world_*.ipk' -type f 2>/dev/null | grep -v '\\-dbg\\|\\-dev\\|\\-src' | head -1)
                     if [ -n \"\$IPK\" ]; then
                         echo \"Extracting binary from IPK: \$IPK\"
                         EXTRACT_DIR=\$(mktemp -d)
@@ -180,7 +188,7 @@ EOF
                         FOUND=\$(find \"\$EXTRACT_DIR\" -name 'hello-world' -type f 2>/dev/null | head -1)
                         if [ -n \"\$FOUND\" ] && file \"\$FOUND\" | grep -q 'ELF'; then
                             echo \"✅ Extracted ELF binary from IPK\"
-                            cp \"\$FOUND\" /tmp/artifacts/hello-world-$ARCH_NAME
+                            cp \"\$FOUND\" /home/yocto/project/.yocto-cache/artifacts-$ARCH_NAME/hello-world-$ARCH_NAME
                             file \"\$FOUND\"
                             BINARY=\"COPIED_FROM_IPK\"
                         fi
@@ -193,21 +201,19 @@ EOF
                     echo '✅ Binary already copied to artifacts from IPK'
                 elif [ -n \"\$BINARY\" ] && [ -f \"\$BINARY\" ]; then
                     echo \"✅ Found binary: \$BINARY\"
-                    cp \"\$BINARY\" /tmp/artifacts/hello-world-$ARCH_NAME
-                    echo '✅ Binary copied to artifacts'
+                    cp \"\$BINARY\" /home/yocto/project/.yocto-cache/artifacts-$ARCH_NAME/hello-world-$ARCH_NAME && \\
+                        echo '✅ Binary copied to artifacts'
                     file \"\$BINARY\"
 
                     # Generate preprocessed source files for Veracode analysis
                     echo ''
                     echo '🔨 Generating preprocessed source files (.i)...'
 
-                    # Find Qt5 include path from the Yocto build sysroot
+                    # Find the Qt include root from the recipe-specific Yocto sysroot
                     QT_INC=\"\"
-                    for CANDIDATE in \$(find tmp* -path '*/recipe-sysroot/usr/include/qt5' -type d 2>/dev/null) \
-                                     \$(find tmp* -path '*/sysroots/*/usr/include/qt5' -type d 2>/dev/null) \
-                                     \$(find tmp* -path '*/include/qt5' -type d 2>/dev/null); do
-                        if [ -f \"\$CANDIDATE/QtCore/QObject\" ] || [ -f \"\$CANDIDATE/QtCore/qobject.h\" ]; then
-                            QT_INC=\"\$CANDIDATE\"
+                    for CANDIDATE in \$(find \"\$TMP_ROOT/work\" -path '*/recipe-sysroot/usr/include/QtCore' -type d 2>/dev/null); do
+                        if [ -f \"\$CANDIDATE/QObject\" ] || [ -f \"\$CANDIDATE/qobject.h\" ]; then
+                            QT_INC=\$(dirname \"\$CANDIDATE\")
                             break
                         fi
                     done
@@ -217,37 +223,22 @@ EOF
                     if [ -n \"\$QT_INC\" ]; then
                         echo \"Using Qt5 headers from: \$QT_INC\"
 
-                        g++ -E -I. \
-                            -I\$QT_INC \
-                            -I\$QT_INC/QtCore \
-                            -I\$QT_INC/QtGui \
-                            -I\$QT_INC/QtWidgets \
+                        g++ -E -I. \\
+                            -I\"\$QT_INC\" \\
+                            -I\"\$QT_INC/QtCore\" \\
+                            -I\"\$QT_INC/QtGui\" \\
+                            -I\"\$QT_INC/QtWidgets\" \\
                             -dD main.cpp > main.i 2>/dev/null && echo '✅ Generated main.i' || echo '⚠️  Failed to preprocess main.cpp'
 
                         g++ -E -I. \
-                            -I\$QT_INC \
-                            -I\$QT_INC/QtCore \
-                            -I\$QT_INC/QtGui \
-                            -I\$QT_INC/QtWidgets \
+                            -I\"\$QT_INC\" \\
+                            -I\"\$QT_INC/QtCore\" \\
+                            -I\"\$QT_INC/QtGui\" \\
+                            -I\"\$QT_INC/QtWidgets\" \\
                             -dD mainwindow.cpp > mainwindow.i 2>/dev/null && echo '✅ Generated mainwindow.i' || echo '⚠️  Failed to preprocess mainwindow.cpp'
                     else
                         echo '⚠️  Qt5 headers not found in Yocto sysroot'
-                        echo '    Installing Qt5 dev headers...'
-                        sudo apt-get update -qq && sudo apt-get install -y -qq qtbase5-dev > /dev/null 2>&1
-
-                        g++ -E -I. \
-                            -I/usr/include/x86_64-linux-gnu/qt5 \
-                            -I/usr/include/x86_64-linux-gnu/qt5/QtCore \
-                            -I/usr/include/x86_64-linux-gnu/qt5/QtGui \
-                            -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets \
-                            -dD main.cpp > main.i 2>/dev/null && echo '✅ Generated main.i' || echo '⚠️  Failed to preprocess main.cpp'
-
-                        g++ -E -I. \
-                            -I/usr/include/x86_64-linux-gnu/qt5 \
-                            -I/usr/include/x86_64-linux-gnu/qt5/QtCore \
-                            -I/usr/include/x86_64-linux-gnu/qt5/QtGui \
-                            -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets \
-                            -dD mainwindow.cpp > mainwindow.i 2>/dev/null && echo '✅ Generated mainwindow.i' || echo '⚠️  Failed to preprocess mainwindow.cpp'
+                        echo '    Skipping preprocessing to avoid using unrelated host Qt headers.'
                     fi
 
                     ls -lh *.i 2>/dev/null
@@ -255,20 +246,20 @@ EOF
                 else
                     echo '❌ Binary not found after successful build'
                     echo \"\"
-                    echo \"Listing all tmp* directories:\"
-                    ls -d tmp* 2>/dev/null
+                    echo \"Listing Yocto TMPDIR:\"
+                    ls -ld \"\$TMP_ROOT\" 2>/dev/null
 
                     echo \"\"
                     echo \"All hello-world files in build tree:\"
-                    find tmp* -name '*hello-world*' -type f 2>/dev/null | head -30
+                    find \"\$TMP_ROOT\" -name '*hello-world*' -type f 2>/dev/null | head -30
 
                     echo \"\"
                     echo \"Recipe work directories:\"
-                    find tmp* -type d -name 'hello-world*' 2>/dev/null
+                    find \"\$TMP_ROOT\" -type d -name 'hello-world*' 2>/dev/null
 
                     echo \"\"
                     echo \"IPK packages:\"
-                    find tmp* -name 'hello-world*.ipk' 2>/dev/null
+                    find \"\$TMP_ROOT\" -name 'hello-world*.ipk' 2>/dev/null
 
                     exit 1
                 fi

@@ -38,21 +38,28 @@ This document summarizes all work completed on the cpp-yocto project to prepare 
    - **Benefit:** Massive speedup on repeat builds (first: 90+ min, subsequent: 5-15 min)
    - **Added to .gitignore:** `.yocto-cache/`
 
-5. **Binary Search Logic Fix**
-   - **Problem:** Script couldn't find binary after successful build (looked in `tmp/` instead of `tmp-glibc/`)
-   - **Root Cause:** Yocto appends libc name to TMPDIR (e.g., `tmp-glibc`)
-   - **Fix:** Changed all `tmp/work` paths to `tmp*/work` to match all tmp* variants
+5. **Docker-backed Yocto Temporary Storage**
+   - **Problem:** Docker's writable overlay filesystem ran out of space during native toolchain builds.
+   - **Fix:** Each architecture uses a persistent Docker volume (`yocto-tmp-arm64` or `yocto-tmp-x86-64`) for `TMPDIR`.
+   - **Reason:** Docker volumes provide Linux case-sensitive storage, unlike macOS bind mounts, and avoid Yocto's filesystem sanity error.
+   - **Permissions:** A short initialization container assigns the volume to the non-root `yocto` user before BitBake runs.
+
+6. **Binary Search Logic Fix**
+   - **Problem:** Script couldn't find the binary after a successful build because the output is stored in the Docker-backed TMPDIR rather than `/tmp/yocto-build-*`.
+   - **Fix:** Searches the mounted `tmp-$ARCH_NAME-glibc` volume directly for image, package, build, and IPK outputs.
+   - **Artifact staging:** Copies the binary through the writable project mount to avoid macOS temporary-directory bind-mount permissions.
    - **Fallback:** Added IPK extraction logic when raw binary isn't found
      - Uses `ar` to unpack IPK packages
      - Extracts data tarball (supports `.tar.zst`, `.tar.xz`, `.tar.gz`)
      - Validates extracted file is actually ELF binary
 
-6. **Preprocessed Source Generation**
+7. **Preprocessed Source Generation**
    - **Added:** Automatic generation of `.i` files inside Docker container
    - **Location:** `/home/yocto/project/preprocessed-src/sources/`
-   - **Headers:** Auto-discovers Qt5 include paths from Yocto sysroot
-   - **Fallback:** Installs `qtbase5-dev` if headers not found in sysroot
-   - **Output:** 2.6MB main.i, 2.4MB mainwindow.i with all headers expanded
+   - **Headers:** Finds the application recipe's `recipe-sysroot/usr/include` directory in the Docker volume.
+   - **Include paths:** Uses the sysroot root plus `QtCore`, `QtGui`, and `QtWidgets` directories.
+   - **Fallback:** Does not use host Qt headers, preventing architecture/version mismatches in analysis.
+   - **Output:** Approximately 3MB each for `main.i` and `mainwindow.i` with Yocto's Qt headers expanded.
 
 ---
 
@@ -130,14 +137,14 @@ The application was rewritten to include 11 high-confidence vulnerability patter
 
 ## 4. Preprocessed Source Files
 
-Generated via Docker container with Qt5 headers:
+Generated via Docker container with the application recipe's Yocto Qt headers:
 
 ```bash
 g++ -E -I. \
-    -I/usr/include/aarch64-linux-gnu/qt5 \
-    -I/usr/include/aarch64-linux-gnu/qt5/QtCore \
-    -I/usr/include/aarch64-linux-gnu/qt5/QtGui \
-    -I/usr/include/aarch64-linux-gnu/qt5/QtWidgets \
+   -I<recipe-sysroot>/usr/include \
+   -I<recipe-sysroot>/usr/include/QtCore \
+   -I<recipe-sysroot>/usr/include/QtGui \
+   -I<recipe-sysroot>/usr/include/QtWidgets \
     -dD mainwindow.cpp > mainwindow.i
 ```
 
@@ -225,9 +232,8 @@ Veracode should detect all 11 CWE types in cpp-yocto package:
 - Created SECURITY_TEST_FLAWS.md documentation
 
 **Git state:**
-- All changes committed
-- Ready for Veracode upload
-- Clean working tree
+- Script and documentation changes are committed separately from generated `.i` build outputs.
+- Ready for Veracode upload after regenerating the preprocessed sources.
 
 ---
 
