@@ -77,6 +77,9 @@ RUN apt-get update --allow-insecure-repositories --allow-unauthenticated 2>&1 | 
 RUN locale-gen en_US.UTF-8 && \
     update-locale LANG=en_US.UTF-8
 
+# Install srcclr (Veracode SCA tool)
+RUN curl -sSL https://download.sourceclear.com/install | sh
+
 # Create non-root user for builds (Yocto best practice)
 # This prevents permission issues and is more secure
 RUN useradd -m -s /bin/bash yocto && \

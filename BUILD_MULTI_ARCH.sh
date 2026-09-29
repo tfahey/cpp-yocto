@@ -10,10 +10,12 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 OUTPUT_DIR="$SCRIPT_DIR/hello-world-output"
 
 # Persistent cache directories on the host (survive across builds)
-YOCTO_DL_DIR="$SCRIPT_DIR/.yocto-cache/downloads"
-YOCTO_SSTATE_DIR="$SCRIPT_DIR/.yocto-cache/sstate-cache"
+# DL_DIR is shared across architectures (packages are arch-independent)
+# SSTATE_DIR is per-architecture to avoid cache invalidation on arch switches
+YOCTO_CACHE_DIR="$SCRIPT_DIR/.yocto-cache"
+YOCTO_DL_DIR="$YOCTO_CACHE_DIR/downloads"
 
-mkdir -p "$YOCTO_DL_DIR" "$YOCTO_SSTATE_DIR"
+mkdir -p "$YOCTO_DL_DIR"
 
 TARGET="${1:-both}"
 
@@ -39,6 +41,10 @@ build_architecture() {
     local BUILD_DIR="$SCRIPT_DIR/build-$ARCH_NAME"
     local TMP_BUILD="/tmp/yocto-build-$ARCH_NAME"
     local OUTPUT_SUBDIR="$OUTPUT_DIR"
+
+    # Architecture-specific sstate cache to avoid cache invalidation on arch switches
+    local YOCTO_SSTATE_DIR="$YOCTO_CACHE_DIR/sstate-cache-$ARCH_NAME"
+    mkdir -p "$YOCTO_SSTATE_DIR"
 
     if [ "$ARCH_NAME" != "x86-64" ]; then
         OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH_NAME"
@@ -68,8 +74,9 @@ USER_CLASSES ?= "buildstats"
 PATCHRESOLVE = "noop"
 
 # Persistent cache directories (mounted from host)
+# DL_DIR shared across architectures, SSTATE_DIR per-architecture
 DL_DIR = "/home/yocto/cache/downloads"
-SSTATE_DIR = "/home/yocto/cache/sstate-cache"
+SSTATE_DIR = "/home/yocto/cache/sstate-cache-$ARCH_NAME"
 
 # Memory optimization for Docker builds
 # Limit parallel jobs to prevent OOM during GCC compilation
@@ -97,12 +104,12 @@ EOF
     # Allocate 7GB memory and 2GB swap to prevent OOM kills during GCC compilation
     # Mount persistent cache volumes to speed up subsequent builds
     docker run --rm \
-        -m 7g \
-        --memory-swap 9g \
+        -m 14g \
+        --memory-swap 16g \
         -v "$SCRIPT_DIR:/home/yocto/project" \
         -v "$TEMP_ARTIFACTS:/tmp/artifacts" \
         -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
-        -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache" \
+        -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
         yocto-qt-builder:latest \
         bash -c "
             cd /tmp
