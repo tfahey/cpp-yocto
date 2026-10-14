@@ -21,6 +21,15 @@ YOCTO_SSTATE_X86_64="$YOCTO_CACHE_DIR/sstate-cache-x86_64"
 
 mkdir -p "$YOCTO_DL_DIR" "$YOCTO_SSTATE_ARM64" "$YOCTO_SSTATE_X86_64"
 
+# Check for Veracode credentials
+if [ -n "$VERACODE_API_ID" ] && [ -n "$VERACODE_API_KEY" ]; then
+    echo "✅ Veracode credentials detected"
+else
+    echo "ℹ️  Veracode credentials not set (optional for manual testing)"
+    echo "   Set VERACODE_API_ID and VERACODE_API_KEY to enable packaging"
+fi
+echo ""
+
 # Architecture (arm64 or x86-64, defaults to arm64)
 ARCH="${1:-arm64}"
 COMMAND="${2:-status}"
@@ -66,12 +75,14 @@ case "$COMMAND" in
                 -m 14g \
                 --memory-swap 16g \
                 -e SRCCLR_API_TOKEN \
+                -e VERACODE_API_ID \
+                -e VERACODE_API_KEY \
                 -v "$SCRIPT_DIR:/home/yocto/project" \
                 -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
                 -v "$YOCTO_SSTATE_ARM64:/home/yocto/cache/sstate-cache-arm64" \
                 -v "$YOCTO_SSTATE_X86_64:/home/yocto/cache/sstate-cache-x86_64" \
                 --name "$CONTAINER_NAME" \
-                yocto-qt-builder:latest \
+                yocto-qt-builder:$ARCH \
                 sleep infinity
             docker start "$CONTAINER_NAME"
             echo "   ✅ Container created and started ($ARCH)"
@@ -115,6 +126,19 @@ case "$COMMAND" in
         docker logs "$CONTAINER_NAME"
         ;;
 
+    fix-permissions)
+        echo "🔧 Fixing cache directory permissions for $ARCH..."
+        docker exec "$CONTAINER_NAME" bash -c "
+            sudo mkdir -p /home/yocto/cache/tmp-$ARCH-glibc
+            sudo chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH-glibc
+            sudo chmod -R 755 /home/yocto/cache/tmp-$ARCH-glibc
+            sudo mkdir -p /home/yocto/cache/sstate-cache-$ARCH
+            sudo chown -R yocto:yocto /home/yocto/cache/sstate-cache-$ARCH
+            sudo chmod -R 755 /home/yocto/cache/sstate-cache-$ARCH
+        "
+        echo "   ✅ Permissions fixed"
+        ;;
+
     bash)
         shift
         echo "🔨 Running: $@"
@@ -129,18 +153,19 @@ case "$COMMAND" in
         echo "  x86-64        - x86_64 container"
         echo ""
         echo "Commands:"
-        echo "  start         - Start the container in background"
-        echo "  shell         - Open an interactive shell in the container"
-        echo "  stop          - Stop the container"
-        echo "  rm            - Remove the container"
-        echo "  status        - Show container status"
-        echo "  logs          - Show container logs"
-        echo "  bash [cmd]    - Run a bash command in the container"
+        echo "  start              - Start the container in background"
+        echo "  shell              - Open an interactive shell in the container"
+        echo "  stop               - Stop the container"
+        echo "  rm                 - Remove the container"
+        echo "  status             - Show container status"
+        echo "  logs               - Show container logs"
+        echo "  fix-permissions    - Fix cache directory permissions (run once per arch)"
+        echo "  bash [cmd]         - Run a bash command in the container"
         echo ""
         echo "Examples:"
+        echo "  bash CONTAINER_MANAGER.sh arm64 start"
+        echo "  bash CONTAINER_MANAGER.sh arm64 fix-permissions"
         echo "  bash CONTAINER_MANAGER.sh arm64 shell"
-        echo "  bash CONTAINER_MANAGER.sh x86-64 shell"
-        echo "  bash CONTAINER_MANAGER.sh x86-64 bash 'srcclr --version'"
-        echo "  bash CONTAINER_MANAGER.sh x86-64 bash 'srcclr scan /home/yocto/build-x86-64/tmp-glibc/work'"
+        echo "  bash CONTAINER_MANAGER.sh x86-64 bash 'bitbake hello-world'"
         ;;
 esac

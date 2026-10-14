@@ -1,10 +1,14 @@
-# Dockerfile for Yocto Qt5 Build Environment
+# Dockerfile for Yocto Qt5 Build Environment (base, ARM64-compatible)
 #
 # Usage:
-#   docker build -t yocto-qt-builder:latest .
-#   docker run -it -v $(pwd):/home/yocto/project yocto-qt-builder:latest
+#   docker build -t yocto-qt-builder:arm64 .
+#   docker run -it -v $(pwd):/home/yocto/project yocto-qt-builder:arm64
 #
 # Based on: Ubuntu 20.04 LTS
+#
+# Note: This is the base image for ARM64 builds (no Veracode CLI).
+# For x86-64 builds with Veracode SAST packaging, use Dockerfile.x86-64
+# Reason: Veracode CLI is x86-64 only and not available for ARM64
 
 FROM ubuntu:20.04
 
@@ -76,9 +80,6 @@ RUN apt-get update --allow-insecure-repositories --allow-unauthenticated 2>&1 | 
 # Generate UTF-8 locale (required for Yocto/BitBake)
 RUN locale-gen en_US.UTF-8 && \
     update-locale LANG=en_US.UTF-8
-
-# Install srcclr (Veracode SCA tool)
-RUN curl -sSL https://download.sourceclear.com/install | sh
 
 # Create non-root user for builds (Yocto best practice)
 # This prevents permission issues and is more secure

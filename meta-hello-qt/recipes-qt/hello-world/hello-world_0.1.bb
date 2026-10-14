@@ -23,5 +23,10 @@ DEPENDS = "qtbase qtdeclarative"
 
 RDEPENDS:${PN} = "qtbase qtdeclarative"
 
+# Preprocessed source generation for SAST analysis
+CFLAGS:append = " -save-temps=obj"
+CXXFLAGS:append = " -save-temps=obj"
+BB_ENV_PASSTHROUGH_ADDITIONS:append = " CFLAGS CXXFLAGS"
+
 # Explicitly define what files to package
 FILES:${PN} = "${bindir}/hello-world"
