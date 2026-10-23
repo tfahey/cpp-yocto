@@ -27,11 +27,7 @@ build_architecture() {
     local MACHINE=$1
     local ARCH_NAME=$2
     local BUILD_DIR="$SCRIPT_DIR/build-$ARCH_NAME"
-    local OUTPUT_SUBDIR="$OUTPUT_DIR"
-
-    if [ "$ARCH_NAME" != "x86-64" ]; then
-        OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH_NAME"
-    fi
+    local OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH_NAME"
 
     echo "🔨 Building for $ARCH_NAME ($MACHINE)..."
     echo ""

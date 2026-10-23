@@ -213,7 +213,7 @@ EOF
 
     # Copy from temp directory to host
     if [ $BUILD_RESULT -eq 0 ] && [ -f "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" ]; then
-        mkdir -p "\$OUTPUT_SUBDIR"
+        mkdir -p "$OUTPUT_SUBDIR"
         cp "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" "$OUTPUT_SUBDIR/hello-world"
         echo "✅ Binary saved to: $OUTPUT_SUBDIR/hello-world"
     elif [ $BUILD_RESULT -ne 0 ]; then

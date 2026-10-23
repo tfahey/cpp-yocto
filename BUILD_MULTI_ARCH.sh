@@ -40,15 +40,11 @@ build_architecture() {
     local ARCH_NAME=$2
     local BUILD_DIR="$SCRIPT_DIR/build-$ARCH_NAME"
     local YOCTO_TMP_VOLUME="yocto-tmp-$ARCH_NAME"
-    local OUTPUT_SUBDIR="$OUTPUT_DIR"
+    local OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH_NAME"
 
     # Architecture-specific sstate cache to avoid cache invalidation on arch switches
     local YOCTO_SSTATE_DIR="$YOCTO_CACHE_DIR/sstate-cache-$ARCH_NAME"
     mkdir -p "$YOCTO_SSTATE_DIR"
-
-    if [ "$ARCH_NAME" != "x86-64" ]; then
-        OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH_NAME"
-    fi
 
     local ARCH_START_TIME=$(date +%s)
     local ARCH_START_DISPLAY=$(date "+%H:%M:%S")
