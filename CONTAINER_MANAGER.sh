@@ -19,7 +19,7 @@ YOCTO_DL_DIR="$YOCTO_CACHE_DIR/downloads"
 YOCTO_SSTATE_ARM64="$YOCTO_CACHE_DIR/sstate-cache-arm64"
 YOCTO_SSTATE_X86_64="$YOCTO_CACHE_DIR/sstate-cache-x86-64"
 
-mkdir -p "$YOCTO_DL_DIR" "$YOCTO_SSTATE_ARM64" "$YOCTO_SSTATE_X86-64"
+mkdir -p "$YOCTO_DL_DIR" "$YOCTO_SSTATE_ARM64" "$YOCTO_SSTATE_X86_64"
 
 # Check for Veracode credentials
 if [ -n "$VERACODE_API_ID" ] && [ -n "$VERACODE_API_KEY" ]; then
