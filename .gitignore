@@ -1,6 +1,7 @@
 # Build artifacts
 hello-world-output/
 build/tmp/
+build/tmp-glibc/
 build/cache/
 build/downloads/
 build/sstate-cache/
