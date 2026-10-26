@@ -243,7 +243,7 @@ EOF
                     export VERACODE_API_ID VERACODE_API_KEY
 
                     # Create timestamped log file for veracode package output
-                    PACKAGE_LOG="/home/yocto/project/veracode-package-\$(date +%Y%m%d-%H%M%S).log"
+                    PACKAGE_LOG=\"/home/yocto/project/veracode-package-\\\$(date +%Y%m%d-%H%M%S).log\"
 
                     if sudo -E /veracode package \
                         --source /home/yocto/project/meta-hello-qt/recipes-qt/hello-world \
