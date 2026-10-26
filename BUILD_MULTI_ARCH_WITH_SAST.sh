@@ -241,15 +241,21 @@ EOF
                     # Pass credentials via environment variables (requires -E flag)
                     # Use --trust to skip interactive trust prompt in non-interactive environment
                     export VERACODE_API_ID VERACODE_API_KEY
+
+                    # Create timestamped log file for veracode package output
+                    PACKAGE_LOG="/home/yocto/project/veracode-package-\$(date +%Y%m%d-%H%M%S).log"
+
                     if sudo -E /veracode package \
                         --source /home/yocto/project/meta-hello-qt/recipes-qt/hello-world \
                         --type directory \
                         -o /home/yocto/project/veracode-package \
                         --trust \
-                        --verbose; then
+                        --verbose 2>&1 | tee \"\$PACKAGE_LOG\"; then
                         echo '✅ Veracode package completed successfully'
+                        echo \"   Log: \$PACKAGE_LOG\"
                     else
                         echo '⚠️  Veracode package failed (continuing anyway)'
+                        echo \"   Log: \$PACKAGE_LOG\"
                     fi
                 else
                     echo '⚠️  veracode CLI not found at /veracode'
