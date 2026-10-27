@@ -1,6 +1,8 @@
 #!/bin/bash
-# Build Qt5 hello-world for multiple architectures (ARM64 + x86-64)
-# This version uses persistent containers to reliably extract artifacts
+# Build Qt5 hello-world for multiple architectures using PERSISTENT containers
+#
+# This version uses CONTAINER_MANAGER.sh to create persistent containers,
+# then calls BUILD_MULTI_ARCH.sh with USE_PERSISTENT_CONTAINER=1
 #
 # Usage:
 #   bash BUILD_MULTI_ARCH_PERSISTENT.sh [arm64|x86-64|both]
@@ -10,146 +12,35 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-OUTPUT_DIR="$SCRIPT_DIR/hello-world-output"
 
 TARGET="${1:-both}"
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║   Building Qt5 Hello World for Multiple Architectures      ║"
-echo "║   (Persistent Container - Reliable Binary Extraction)      ║"
+echo "║   Using Persistent Containers                              ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
-echo "Target: $TARGET"
-echo ""
 
-# Helper function to build for a specific architecture
-build_architecture() {
-    local MACHINE=$1
-    local ARCH_NAME=$2
-    local BUILD_DIR="$SCRIPT_DIR/build-$ARCH_NAME"
-    local OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH_NAME"
+# Ensure CONTAINER_MANAGER.sh exists
+if [ ! -f "$SCRIPT_DIR/CONTAINER_MANAGER.sh" ]; then
+    echo "❌ ERROR: CONTAINER_MANAGER.sh not found"
+    exit 1
+fi
 
-    echo "🔨 Building for $ARCH_NAME ($MACHINE)..."
-    echo ""
-
-    # Create build directory
-    mkdir -p "$BUILD_DIR/conf"
-
-    # Copy bblayers.conf
-    cp "$SCRIPT_DIR/build/conf/bblayers.conf" "$BUILD_DIR/conf/" 2>/dev/null || true
-
-    # Create local.conf for this architecture
-    cat > "$BUILD_DIR/conf/local.conf" << EOF
-MACHINE = "$MACHINE"
-TMPDIR = "/tmp/yocto-build-$ARCH_NAME/tmp"
-IMAGE_INSTALL:append = " hello-world"
-EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
-USER_CLASSES ?= "buildstats"
-PATCHRESOLVE = "noop"
-CONF_VERSION = "2"
-EOF
-
-    # Create temporary directory for artifacts
-    TEMP_DIR=$(mktemp -d)
-    trap "rm -rf $TEMP_DIR" RETURN
-
-    echo "Starting build in persistent Docker container..."
-
-    # Run build in persistent container (NO --rm flag)
-    CONTAINER_ID=$(docker run -d \
-        -v "$SCRIPT_DIR:/home/yocto/project" \
-        -v "$TEMP_DIR:/tmp/extract" \
-        yocto-qt-builder:latest \
-        sleep 999)
-
-    # Run the build commands
-    docker exec -u yocto "$CONTAINER_ID" bash -c "
-        set -e
-        cd /tmp
-        mkdir -p yocto-build-$ARCH_NAME
-        cd yocto-build-$ARCH_NAME
-
-        # Setup
-        cp -r /home/yocto/project/build-$ARCH_NAME/conf .
-        source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
-
-        # Show config
-        echo '=== Build Configuration ==='
-        grep '^MACHINE' conf/local.conf
-        echo ''
-
-        # Build
-        echo '=== Starting Build ==='
-        bitbake hello-world
-
-        echo ''
-        echo '✅ Build completed successfully!'
-    "
-
-    BUILD_STATUS=$?
-
-    if [ $BUILD_STATUS -ne 0 ]; then
-        echo "❌ Build failed"
-        docker rm -f "$CONTAINER_ID" > /dev/null 2>&1
-        exit 1
-    fi
-
-    echo ""
-    echo "📦 Extracting binary from container..."
-
-    # Find the binary in the container
-    BINARY=$(docker exec "$CONTAINER_ID" bash -c "
-        cd /tmp/yocto-build-$ARCH_NAME
-        find tmp/work -name 'hello-world' -type f ! -name '*.so' ! -name '*.a' 2>/dev/null | head -1
-    ")
-
-    if [ -z "$BINARY" ]; then
-        echo "❌ Binary not found after build"
-        docker rm -f "$CONTAINER_ID" > /dev/null 2>&1
-        exit 1
-    fi
-
-    echo "✅ Found: $BINARY"
-
-    # Copy binary to temp mount point
-    docker exec "$CONTAINER_ID" bash -c "
-        cp /tmp/yocto-build-$ARCH_NAME/$BINARY /tmp/extract/hello-world
-    "
-
-    # Copy from temp to Mac
-    if [ -f "$TEMP_DIR/hello-world" ]; then
-        mkdir -p "$OUTPUT_SUBDIR"
-        cp "$TEMP_DIR/hello-world" "$OUTPUT_SUBDIR/hello-world"
-        chmod +x "$OUTPUT_SUBDIR/hello-world"
-        echo "✅ Binary transferred to Mac"
-        echo ""
-        echo "File: $OUTPUT_SUBDIR/hello-world"
-        file "$OUTPUT_SUBDIR/hello-world"
-        ls -lh "$OUTPUT_SUBDIR/hello-world"
-        echo ""
-    else
-        echo "❌ Failed to copy binary"
-        docker rm -f "$CONTAINER_ID" > /dev/null 2>&1
-        exit 1
-    fi
-
-    # Cleanup
-    docker rm -f "$CONTAINER_ID" > /dev/null 2>&1
-    echo "✅ Container cleaned up"
-    echo ""
-}
-
-# Build based on target
+# Start persistent containers based on target
 case "$TARGET" in
     arm64)
-        build_architecture "qemuarm64" "arm64"
+        echo "🚀 Setting up arm64 persistent container..."
+        bash "$SCRIPT_DIR/CONTAINER_MANAGER.sh" arm64 start
         ;;
     x86-64)
-        build_architecture "qemux86-64" "x86-64"
+        echo "🚀 Setting up x86-64 persistent container..."
+        bash "$SCRIPT_DIR/CONTAINER_MANAGER.sh" x86-64 start
         ;;
     both)
-        build_architecture "qemuarm64" "arm64"
-        build_architecture "qemux86-64" "x86-64"
+        echo "🚀 Setting up persistent containers..."
+        bash "$SCRIPT_DIR/CONTAINER_MANAGER.sh" arm64 start
+        bash "$SCRIPT_DIR/CONTAINER_MANAGER.sh" x86-64 start
         ;;
     *)
         echo "❌ Invalid target: $TARGET"
@@ -159,22 +50,51 @@ case "$TARGET" in
 esac
 
 echo ""
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║              ✅ All Builds Complete!                       ║"
-echo "╚════════════════════════════════════════════════════════════╝"
+echo "✅ Persistent containers ready"
 echo ""
-echo "Output directory: $OUTPUT_DIR"
+echo "Running builds using persistent containers..."
 echo ""
 
-# List built binaries
-echo "Built binaries:"
-if [ -f "$OUTPUT_DIR/hello-world" ]; then
-    echo "  • x86-64:  $OUTPUT_DIR/hello-world"
-fi
-if [ -f "$OUTPUT_DIR/arm64/hello-world" ]; then
-    echo "  • ARM64:   $OUTPUT_DIR/arm64/hello-world"
-fi
+# Run BUILD_MULTI_ARCH.sh with persistent container mode
+USE_PERSISTENT_CONTAINER=1 bash "$SCRIPT_DIR/BUILD_MULTI_ARCH.sh" "$TARGET"
 
-echo ""
-echo "✅ Ready to test on Mac Docker or deploy to Linux!"
-echo ""
+BUILD_RESULT=$?
+
+if [ $BUILD_RESULT -eq 0 ]; then
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║   ✅ Builds Complete! Persistent Containers Still Running  ║"
+    echo "╚════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "To stop persistent containers:"
+    case "$TARGET" in
+        arm64)
+            echo "  bash CONTAINER_MANAGER.sh arm64 stop"
+            ;;
+        x86-64)
+            echo "  bash CONTAINER_MANAGER.sh x86-64 stop"
+            ;;
+        both)
+            echo "  bash CONTAINER_MANAGER.sh arm64 stop"
+            echo "  bash CONTAINER_MANAGER.sh x86-64 stop"
+            ;;
+    esac
+    echo ""
+    echo "To remove containers completely:"
+    case "$TARGET" in
+        arm64)
+            echo "  bash CONTAINER_MANAGER.sh arm64 rm"
+            ;;
+        x86-64)
+            echo "  bash CONTAINER_MANAGER.sh x86-64 rm"
+            ;;
+        both)
+            echo "  bash CONTAINER_MANAGER.sh arm64 rm"
+            echo "  bash CONTAINER_MANAGER.sh x86-64 rm"
+            ;;
+    esac
+    echo ""
+else
+    echo "❌ Build failed"
+    exit 1
+fi

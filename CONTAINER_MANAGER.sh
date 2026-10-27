@@ -70,20 +70,38 @@ case "$COMMAND" in
             fi
         else
             echo "   Creating new container for $ARCH..."
-            docker create \
-                --platform "$PLATFORM" \
-                -m 14g \
-                --memory-swap 16g \
-                -e SRCCLR_API_TOKEN \
-                -e VERACODE_API_ID \
-                -e VERACODE_API_KEY \
-                -v "$SCRIPT_DIR:/home/yocto/project" \
-                -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
-                -v "$YOCTO_SSTATE_ARM64:/home/yocto/cache/sstate-cache-arm64" \
-                -v "$YOCTO_SSTATE_X86_64:/home/yocto/cache/sstate-cache-x86-64" \
-                --name "$CONTAINER_NAME" \
-                yocto-qt-builder:$ARCH \
-                sleep infinity
+            # Build docker create command with architecture-specific mounts
+            DOCKER_ARGS=(
+                "create"
+                "--platform" "$PLATFORM"
+                "-m" "14g"
+                "--memory-swap" "16g"
+                "-e" "SRCCLR_API_TOKEN"
+                "-e" "VERACODE_API_ID"
+                "-e" "VERACODE_API_KEY"
+                "-v" "$SCRIPT_DIR:/home/yocto/project"
+                "-v" "$YOCTO_DL_DIR:/home/yocto/cache/downloads"
+            )
+
+            # Add architecture-specific cache mounts
+            case "$ARCH" in
+                arm64)
+                    DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_ARM64:/home/yocto/cache/sstate-cache-arm64")
+                    DOCKER_ARGS+=("-v" "$YOCTO_CACHE_DIR/tmp-arm64-glibc:/home/yocto/cache/tmp-arm64-glibc")
+                    ;;
+                x86-64)
+                    DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_X86_64:/home/yocto/cache/sstate-cache-x86-64")
+                    DOCKER_ARGS+=("-v" "$YOCTO_CACHE_DIR/tmp-x86-64-glibc:/home/yocto/cache/tmp-x86-64-glibc")
+                    ;;
+            esac
+
+            DOCKER_ARGS+=(
+                "--name" "$CONTAINER_NAME"
+                "yocto-qt-builder:$ARCH"
+                "sleep" "infinity"
+            )
+
+            docker "${DOCKER_ARGS[@]}"
             docker start "$CONTAINER_NAME"
             echo "   ✅ Container created and started ($ARCH)"
         fi

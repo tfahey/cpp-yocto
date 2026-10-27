@@ -58,8 +58,8 @@ docker run --rm \
     cd /tmp
     mkdir -p yocto-build
     cd yocto-build
-    cp -r /home/yocto/project/build/conf .
-    source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
+    cp -r /home/yocto/project/build-arm64/conf .
+    source /home/yocto/project/poky/oe-init-build-env /home/yocto/project/build-arm64 > /dev/null 2>&1
     bitbake hello-world
   "
 ```
@@ -142,8 +142,8 @@ The `cmake_qt5` class automatically:
    docker run --rm -v /Users/tfahey/github/cpp-yocto:/home/yocto/project \
      yocto-qt-builder:latest bash -c "
        cd /tmp/yocto-build
-       cp -r /home/yocto/project/build/conf .
-       source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
+       cp -r /home/yocto/project/build-arm64/conf .
+       source /home/yocto/project/poky/oe-init-build-env /home/yocto/project/build-arm64 > /dev/null 2>&1
        bitbake -e hello-world 2>&1 | head -50
      "
    ```

@@ -4,43 +4,66 @@
 # Usage:
 #   bash BUILD_MULTI_ARCH.sh [arm64|x86-64|both]
 #
-# Default: build both
+# Optional environment variables:
+#   USE_PERSISTENT_CONTAINER - Set to 1 to use persistent CONTAINER_MANAGER containers
+#
+# Default: build both architectures, using ephemeral containers
+
+set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 OUTPUT_DIR="$SCRIPT_DIR/hello-world-output"
 
-# Persistent cache directories on the host (survive across builds)
-# DL_DIR is shared across architectures (packages are arch-independent)
-# SSTATE_DIR is per-architecture to avoid cache invalidation on arch switches
+# Persistent cache directories (separate per architecture for efficiency)
 YOCTO_CACHE_DIR="$SCRIPT_DIR/.yocto-cache"
 YOCTO_DL_DIR="$YOCTO_CACHE_DIR/downloads"
 
-mkdir -p "$YOCTO_DL_DIR"
-
 TARGET="${1:-both}"
 
-# Track timing - BEFORE set -e so we can always print this
-START_TIME=$(date +%s)
-START_DISPLAY=$(date "+%Y-%m-%d %H:%M:%S")
+# Persistent container mode (optional, default is ephemeral)
+USE_PERSISTENT_CONTAINER="${USE_PERSISTENT_CONTAINER:-0}"
 
-# Set error flag after capturing start time, so we still exit on errors
-set -e
+# Create cache and output directories
+mkdir -p "$YOCTO_DL_DIR" "$OUTPUT_DIR"
+
+# Pre-create architecture-specific cache directories
+for arch in arm64 x86-64; do
+    mkdir -p "$YOCTO_CACHE_DIR/sstate-cache-$arch"
+done
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║   Building Qt5 Hello World for Multiple Architectures      ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Target: $TARGET"
-echo "Start time: $START_DISPLAY"
+if [ "$USE_PERSISTENT_CONTAINER" = "1" ]; then
+    echo "Mode: Persistent containers (via CONTAINER_MANAGER)"
+else
+    echo "Mode: Ephemeral containers (default)"
+fi
 echo ""
 
+# Helper function to check if persistent container is running
+check_persistent_container() {
+    local arch=$1
+    local container_name="yocto-builder-$arch"
+    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        return 0  # Container is running
+    else
+        return 1  # Container is not running
+    fi
+}
+
 # Helper function to build for a specific architecture
-build_architecture() {
+build_and_package() {
     local MACHINE=$1
     local ARCH_NAME=$2
     local BUILD_DIR="$SCRIPT_DIR/build-$ARCH_NAME"
     local YOCTO_TMP_VOLUME="yocto-tmp-$ARCH_NAME"
     local OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH_NAME"
+
+    # Use architecture-specific Docker image
+    DOCKER_IMAGE="yocto-qt-builder:$ARCH_NAME"
 
     # Architecture-specific sstate cache to avoid cache invalidation on arch switches
     local YOCTO_SSTATE_DIR="$YOCTO_CACHE_DIR/sstate-cache-$ARCH_NAME"
@@ -55,17 +78,30 @@ build_architecture() {
 
     # Create build directory
     mkdir -p "$BUILD_DIR/conf"
-    docker volume create "$YOCTO_TMP_VOLUME" >/dev/null
-    docker run --rm --user root \
-        --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/mnt,volume-nocopy" \
-        yocto-qt-builder:latest \
-        chown -R yocto:yocto /mnt
+    docker volume create "$YOCTO_TMP_VOLUME" >/dev/null 2>&1 || true
+
+    # Pre-initialize cache volumes with proper permissions (ephemeral or persistent container)
+    CONTAINER_NAME="yocto-builder-$ARCH_NAME"
+    if [ "$USE_PERSISTENT_CONTAINER" = "1" ] && check_persistent_container "$ARCH_NAME"; then
+        echo "   📦 Fixing cache permissions in persistent container: $CONTAINER_NAME"
+        docker exec "$CONTAINER_NAME" sudo bash -c "chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME 2>/dev/null && \
+                                                     chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME 2>/dev/null" || true
+    else
+        # For ephemeral: fix permissions on both cache volumes (already exist as mount points)
+        docker run --rm --user root \
+            --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
+            -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
+            "$DOCKER_IMAGE" \
+            bash -c "chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME && \
+                     chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME"
+    fi
 
     # Copy bblayers.conf
     cp "$SCRIPT_DIR/build/conf/bblayers.conf" "$BUILD_DIR/conf/" 2>/dev/null || \
         echo "⚠️  Warning: bblayers.conf not found, will create in container"
 
-    # Create local.conf for this architecture
+    # Create local.conf for this architecture with architecture-specific sstate cache
+    # Note: Yocto will append -glibc to TMPDIR automatically
     cat > "$BUILD_DIR/conf/local.conf" << EOF
 MACHINE = "$MACHINE"
 TMPDIR = "/home/yocto/cache/tmp-$ARCH_NAME"
@@ -74,16 +110,9 @@ EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
 USER_CLASSES ?= "buildstats"
 PATCHRESOLVE = "noop"
 
-# Persistent cache directories (mounted from host)
-# DL_DIR shared across architectures, SSTATE_DIR per-architecture
+# Persistent cache directories (architecture-specific for efficiency)
 DL_DIR = "/home/yocto/cache/downloads"
 SSTATE_DIR = "/home/yocto/cache/sstate-cache-$ARCH_NAME"
-
-# Memory optimization for Docker builds
-# Limit parallel jobs to prevent OOM during GCC compilation
-BB_NUMBER_THREADS = "2"
-PARALLEL_MAKE = "-j 2"
-
 BB_DISKMON_DIRS ??= "\\
     STOPTASKS,\${TMPDIR},1G,100K \\
     STOPTASKS,\${DL_DIR},1G,100K \\
@@ -98,187 +127,37 @@ CONF_VERSION = "2"
 EOF
 
     # Create temporary directory for artifact transfer
-    TEMP_ARTIFACTS="$SCRIPT_DIR/.yocto-cache/artifacts-$ARCH_NAME"
-    mkdir -p "$TEMP_ARTIFACTS"
-    rm -f "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME"
+    TEMP_ARTIFACTS=$(mktemp -d)
     trap "rm -rf $TEMP_ARTIFACTS" EXIT
 
-    # Run build in Docker (interactive mode to see output, wait for completion)
-    # Allocate 7GB memory and 2GB swap to prevent OOM kills during GCC compilation
-    # Mount persistent cache volumes to speed up subsequent builds
-    docker run --rm \
-        -m 14g \
-        --memory-swap 16g \
-        -v "$SCRIPT_DIR:/home/yocto/project" \
-        -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
-        -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
-        --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
-        yocto-qt-builder:latest \
-        bash -c "
-            cd /tmp
-            mkdir -p yocto-build-$ARCH_NAME
-            cd yocto-build-$ARCH_NAME
+    # Run build in Docker (ephemeral or persistent container)
+    # Determine container execution method
+    if [ "$USE_PERSISTENT_CONTAINER" = "1" ] && check_persistent_container "$ARCH_NAME"; then
+        echo "📦 Using persistent container: $CONTAINER_NAME"
+        # For persistent containers, create /tmp/artifacts in container
+        docker exec "$CONTAINER_NAME" mkdir -p /tmp/artifacts
+        docker exec "$CONTAINER_NAME" \
+            bash /home/yocto/project/BUILD_YOCTO_INTERNAL.sh "$ARCH_NAME" "/tmp/artifacts"
+        BUILD_RESULT=$?
+    else
+        # Ephemeral container (default)
+        docker run --rm \
+            -m 14g \
+            --memory-swap 16g \
+            -v "$SCRIPT_DIR:/home/yocto/project" \
+            -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
+            -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
+            --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
+            -v "$TEMP_ARTIFACTS:/tmp/artifacts" \
+            "$DOCKER_IMAGE" \
+            bash /home/yocto/project/BUILD_YOCTO_INTERNAL.sh "$ARCH_NAME" "/tmp/artifacts"
+        BUILD_RESULT=$?
+    fi
 
-            # Setup
-            cp -r /home/yocto/project/build-$ARCH_NAME/conf .
-            source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
-            TMP_ROOT=\"/home/yocto/cache/tmp-$ARCH_NAME-glibc\"
-
-            # Show config
-            echo '=== Build Configuration ==='
-            grep '^MACHINE' conf/local.conf
-            echo ''
-
-            # Build
-            echo '=== Starting Build ==='
-            bitbake hello-world
-
-            BUILD_STATUS=\$?
-            echo ''
-
-            if [ \$BUILD_STATUS -eq 0 ]; then
-                echo '🔍 Searching for binary in Yocto build outputs...'
-                echo \"Build directory: \$(pwd)\"
-
-                # Yocto may append libc name to TMPDIR (e.g. tmp-glibc instead of tmp)
-                # Search all tmp* directories, filter for ELF binaries (not text files)
-                BINARY=\"\"
-
-                # Check in image directory (installed binary)
-                if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find \"\$TMP_ROOT/work\" -path '*/image/usr/bin/hello-world' -type f 2>/dev/null); do
-                        if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
-                    done
-                fi
-
-                # Check in package directory
-                if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find \"\$TMP_ROOT/work\" -path '*/package/usr/bin/hello-world' -type f 2>/dev/null); do
-                        if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
-                    done
-                fi
-
-                # Check in build directory
-                if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find \"\$TMP_ROOT/work\" -path '*/build/hello-world' -type f 2>/dev/null); do
-                        if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
-                    done
-                fi
-
-                # Fallback: any ELF file named hello-world in the build tree
-                if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find \"\$TMP_ROOT\" -type f -name 'hello-world' ! -name '*.so' ! -name '*.a' ! -name '*.o' ! -name '*.ipk' 2>/dev/null); do
-                        if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
-                    done
-                fi
-
-                # Fallback: extract binary from IPK package
-                if [ -z \"\$BINARY\" ]; then
-                    IPK=\$(find \"\$TMP_ROOT/deploy/ipk\" -path '*/hello-world_*.ipk' -type f 2>/dev/null | grep -v '\\-dbg\\|\\-dev\\|\\-src' | head -1)
-                    if [ -n \"\$IPK\" ]; then
-                        echo \"Extracting binary from IPK: \$IPK\"
-                        EXTRACT_DIR=\$(mktemp -d)
-                        cd \"\$EXTRACT_DIR\"
-                        ar x \"\$IPK\"
-                        # IPK data archive can be .tar.gz, .tar.xz, or .tar.zst
-                        if [ -f data.tar.zst ]; then
-                            tar --use-compress-program=unzstd -xf data.tar.zst
-                        elif [ -f data.tar.xz ]; then
-                            tar xf data.tar.xz
-                        elif [ -f data.tar.gz ]; then
-                            tar xf data.tar.gz
-                        fi
-                        FOUND=\$(find \"\$EXTRACT_DIR\" -name 'hello-world' -type f 2>/dev/null | head -1)
-                        if [ -n \"\$FOUND\" ] && file \"\$FOUND\" | grep -q 'ELF'; then
-                            echo \"✅ Extracted ELF binary from IPK\"
-                            cp \"\$FOUND\" /home/yocto/project/.yocto-cache/artifacts-$ARCH_NAME/hello-world-$ARCH_NAME
-                            file \"\$FOUND\"
-                            BINARY=\"COPIED_FROM_IPK\"
-                        fi
-                        cd -  > /dev/null
-                        rm -rf \"\$EXTRACT_DIR\"
-                    fi
-                fi
-
-                if [ \"\$BINARY\" = \"COPIED_FROM_IPK\" ]; then
-                    echo '✅ Binary already copied to artifacts from IPK'
-                elif [ -n \"\$BINARY\" ] && [ -f \"\$BINARY\" ]; then
-                    echo \"✅ Found binary: \$BINARY\"
-                    cp \"\$BINARY\" /home/yocto/project/.yocto-cache/artifacts-$ARCH_NAME/hello-world-$ARCH_NAME && \\
-                        echo '✅ Binary copied to artifacts'
-                    file \"\$BINARY\"
-
-                    # Generate preprocessed source files for Veracode analysis
-                    echo ''
-                    echo '🔨 Generating preprocessed source files (.i)...'
-
-                    # Find the Qt include root from the recipe-specific Yocto sysroot
-                    QT_INC=\"\"
-                    for CANDIDATE in \$(find \"\$TMP_ROOT/work\" -path '*/recipe-sysroot/usr/include/QtCore' -type d 2>/dev/null); do
-                        if [ -f \"\$CANDIDATE/QObject\" ] || [ -f \"\$CANDIDATE/qobject.h\" ]; then
-                            QT_INC=\$(dirname \"\$CANDIDATE\")
-                            break
-                        fi
-                    done
-
-                    cd /home/yocto/project/preprocessed-src/sources
-
-                    if [ -n \"\$QT_INC\" ]; then
-                        echo \"Using Qt5 headers from: \$QT_INC\"
-
-                        g++ -E -I. \\
-                            -I\"\$QT_INC\" \\
-                            -I\"\$QT_INC/QtCore\" \\
-                            -I\"\$QT_INC/QtGui\" \\
-                            -I\"\$QT_INC/QtWidgets\" \\
-                            -dD main.cpp > main.i 2>/dev/null && echo '✅ Generated main.i' || echo '⚠️  Failed to preprocess main.cpp'
-
-                        g++ -E -I. \
-                            -I\"\$QT_INC\" \\
-                            -I\"\$QT_INC/QtCore\" \\
-                            -I\"\$QT_INC/QtGui\" \\
-                            -I\"\$QT_INC/QtWidgets\" \\
-                            -dD mainwindow.cpp > mainwindow.i 2>/dev/null && echo '✅ Generated mainwindow.i' || echo '⚠️  Failed to preprocess mainwindow.cpp'
-                    else
-                        echo '⚠️  Qt5 headers not found in Yocto sysroot'
-                        echo '    Skipping preprocessing to avoid using unrelated host Qt headers.'
-                    fi
-
-                    ls -lh *.i 2>/dev/null
-                    echo '✅ Preprocessed files ready for Veracode'
-                else
-                    echo '❌ Binary not found after successful build'
-                    echo \"\"
-                    echo \"Listing Yocto TMPDIR:\"
-                    ls -ld \"\$TMP_ROOT\" 2>/dev/null
-
-                    echo \"\"
-                    echo \"All hello-world files in build tree:\"
-                    find \"\$TMP_ROOT\" -name '*hello-world*' -type f 2>/dev/null | head -30
-
-                    echo \"\"
-                    echo \"Recipe work directories:\"
-                    find \"\$TMP_ROOT\" -type d -name 'hello-world*' 2>/dev/null
-
-                    echo \"\"
-                    echo \"IPK packages:\"
-                    find \"\$TMP_ROOT\" -name 'hello-world*.ipk' 2>/dev/null
-
-                    exit 1
-                fi
-            else
-                echo '❌ Build failed'
-                exit 1
-            fi
-        "
-
-    BUILD_RESULT=$?
-
-    # Copy from temp directory to Mac
     if [ $BUILD_RESULT -eq 0 ] && [ -f "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" ]; then
         mkdir -p "$OUTPUT_SUBDIR"
         cp "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" "$OUTPUT_SUBDIR/hello-world"
-        echo "✅ Binary saved to Mac: $OUTPUT_SUBDIR/hello-world"
+        echo "✅ Binary saved to: $OUTPUT_SUBDIR/hello-world"
     elif [ $BUILD_RESULT -ne 0 ]; then
         echo "❌ Build failed with exit code $BUILD_RESULT"
         exit 1
@@ -287,39 +166,31 @@ EOF
         exit 1
     fi
 
-    # Show result with timing
+    echo ""
+
+    # Timing
     local ARCH_END_TIME=$(date +%s)
     local ARCH_END_DISPLAY=$(date "+%H:%M:%S")
-    local ARCH_DURATION=$((ARCH_END_TIME - ARCH_START_TIME))
-    local ARCH_MINUTES=$((ARCH_DURATION / 60))
-    local ARCH_SECONDS=$((ARCH_DURATION % 60))
+    local ARCH_ELAPSED=$((ARCH_END_TIME - ARCH_START_TIME))
+    local ARCH_ELAPSED_MIN=$((ARCH_ELAPSED / 60))
 
-    if [ -f "$OUTPUT_SUBDIR/hello-world" ]; then
-        echo ""
-        echo "✅ $ARCH_NAME build complete!"
-        echo "   Binary: $OUTPUT_SUBDIR/hello-world"
-        echo "   End: $ARCH_END_DISPLAY"
-        echo "   Duration: ${ARCH_MINUTES}m ${ARCH_SECONDS}s"
-        file "$OUTPUT_SUBDIR/hello-world" | grep -o "x86-64\|aarch64"
-        ls -lh "$OUTPUT_SUBDIR/hello-world"
-        echo ""
-    else
-        echo "❌ $ARCH_NAME build failed!"
-        exit 1
-    fi
+    echo "✅ $ARCH_NAME build completed"
+    echo "   End: $ARCH_END_DISPLAY"
+    echo "   Duration: ${ARCH_ELAPSED_MIN}m$((ARCH_ELAPSED % 60))s"
+    echo ""
 }
 
 # Build based on target
 case "$TARGET" in
     arm64)
-        build_architecture "qemuarm64" "arm64"
+        build_and_package "qemuarm64" "arm64"
         ;;
     x86-64)
-        build_architecture "qemux86-64" "x86-64"
+        build_and_package "qemux86-64" "x86-64"
         ;;
     both)
-        build_architecture "qemuarm64" "arm64"
-        build_architecture "qemux86-64" "x86-64"
+        build_and_package "qemuarm64" "arm64"
+        build_and_package "qemux86-64" "x86-64"
         ;;
     *)
         echo "❌ Invalid target: $TARGET"
@@ -328,63 +199,20 @@ case "$TARGET" in
         ;;
 esac
 
-set +e  # Disable error exit so we can always print summary
-
 echo ""
-
-# Calculate total elapsed time
-END_TIME=$(date +%s)
-END_DISPLAY=$(date "+%Y-%m-%d %H:%M:%S")
-TOTAL_DURATION=$((END_TIME - START_TIME))
-TOTAL_MINUTES=$((TOTAL_DURATION / 60))
-TOTAL_SECONDS=$((TOTAL_DURATION % 60))
-
-# Check if build succeeded
-BUILD_SUCCESS=0
-if [ -f "$OUTPUT_DIR/hello-world" ] || [ -f "$OUTPUT_DIR/arm64/hello-world" ]; then
-    BUILD_SUCCESS=1
-fi
-
-if [ $BUILD_SUCCESS -eq 1 ]; then
-    echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║              ✅ Build Complete!                            ║"
-    echo "╚════════════════════════════════════════════════════════════╝"
-else
-    echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║              ❌ Build Failed                               ║"
-    echo "╚════════════════════════════════════════════════════════════╝"
-fi
-
-echo ""
-echo "Timeline:"
-echo "  Start:    $START_DISPLAY"
-echo "  End:      $END_DISPLAY"
-echo "  Duration: ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s"
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║              ✅ All Builds Complete!                       ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Output directory: $OUTPUT_DIR"
 echo ""
 
 # List built binaries
-if [ $BUILD_SUCCESS -eq 1 ]; then
-    echo "Built binaries:"
-    if [ -f "$OUTPUT_DIR/hello-world" ]; then
-        echo "  • x86-64:  $OUTPUT_DIR/hello-world"
-    fi
-    if [ -f "$OUTPUT_DIR/arm64/hello-world" ]; then
-        echo "  • ARM64:   $OUTPUT_DIR/arm64/hello-world"
-    fi
-
-    echo ""
-    echo "To test:"
-    echo "  ARM64 on Mac Docker:"
-    echo "    docker run --rm -v $OUTPUT_DIR/arm64:/app --platform linux/arm64 ubuntu:20.04"
-    echo ""
-    echo "  x86-64 on Linux:"
-    echo "    scp $OUTPUT_DIR/hello-world user@linux-vm:"
-    echo "    ssh user@linux-vm ./hello-world"
-    echo ""
-else
-    echo "No binaries found in output directory."
-    echo "Check the build log above for errors."
-    echo ""
+echo "Built binaries:"
+if [ -f "$OUTPUT_DIR/hello-world" ]; then
+    echo "  • x86-64:  $OUTPUT_DIR/hello-world"
 fi
+if [ -f "$OUTPUT_DIR/arm64/hello-world" ]; then
+    echo "  • ARM64:   $OUTPUT_DIR/arm64/hello-world"
+fi
+echo ""

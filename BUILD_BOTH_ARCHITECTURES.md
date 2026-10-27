@@ -57,7 +57,7 @@ docker run --rm \
     mkdir -p yocto-build-arm64
     cd yocto-build-arm64
     cp -r /home/yocto/project/build-arm64/conf .
-    source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
+    source /home/yocto/project/poky/oe-init-build-env /home/yocto/project/build-$ARCH_NAME > /dev/null 2>&1
     bitbake hello-world
     
     # Copy binary
@@ -88,7 +88,7 @@ docker run --rm \
     mkdir -p yocto-build
     cd yocto-build
     cp -r /home/yocto/project/build/conf .
-    source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
+    source /home/yocto/project/poky/oe-init-build-env /home/yocto/project/build-$ARCH_NAME > /dev/null 2>&1
     bitbake hello-world
     
     # Binary already copied to hello-world-output/hello-world
@@ -188,7 +188,7 @@ docker run --rm \
   bash -c "
     cd /tmp && mkdir -p yocto-build-arm64 && cd yocto-build-arm64
     cp -r /home/yocto/project/build-arm64/conf .
-    source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
+    source /home/yocto/project/poky/oe-init-build-env /home/yocto/project/build-$ARCH_NAME > /dev/null 2>&1
     bitbake hello-world
     mkdir -p /home/yocto/project/hello-world-output/arm64
     find tmp/work -name 'hello-world' -type f ! -name '*.so' -exec cp {} /home/yocto/project/hello-world-output/arm64/ \; 2>/dev/null

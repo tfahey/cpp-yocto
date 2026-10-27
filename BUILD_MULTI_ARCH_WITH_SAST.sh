@@ -5,8 +5,9 @@
 #   bash BUILD_MULTI_ARCH_WITH_SAST.sh [arm64|x86-64|both]
 #
 # Optional environment variables:
-#   VERACODE_API_ID      - Veracode API ID (enables upload/scan)
-#   VERACODE_API_KEY     - Veracode API Key (enables upload/scan)
+#   VERACODE_API_ID           - Veracode API ID (enables upload/scan)
+#   VERACODE_API_KEY          - Veracode API Key (enables upload/scan)
+#   USE_PERSISTENT_CONTAINER  - Set to 1 to use persistent CONTAINER_MANAGER containers
 #
 # This script:
 # 1. Builds the application using Yocto (same as BUILD_MULTI_ARCH.sh)
@@ -17,6 +18,12 @@
 # Architecture support:
 #   - ARM64:   Full build support, veracode packaging skipped (CLI x86-64 only)
 #   - x86-64:  Full build support with veracode SAST packaging
+#
+# Container modes:
+#   - Default (ephemeral): Creates temporary containers with --rm, deleted after build
+#   - Persistent mode (USE_PERSISTENT_CONTAINER=1): Uses persistent CONTAINER_MANAGER containers
+#     * First start container with: bash CONTAINER_MANAGER.sh arm64 start
+#     * Then run builds inside persistent container
 #
 # Note: Veracode credentials are passed via environment only (not stored in image/container)
 
@@ -32,6 +39,9 @@ YOCTO_DL_DIR="$YOCTO_CACHE_DIR/downloads"
 
 TARGET="${1:-both}"
 
+# Persistent container mode (optional, default is ephemeral)
+USE_PERSISTENT_CONTAINER="${USE_PERSISTENT_CONTAINER:-0}"
+
 # Create cache and output directories
 mkdir -p "$YOCTO_DL_DIR" "$VERACODE_PACKAGE_DIR"
 
@@ -39,6 +49,17 @@ mkdir -p "$YOCTO_DL_DIR" "$VERACODE_PACKAGE_DIR"
 for arch in arm64 x86-64; do
     mkdir -p "$YOCTO_CACHE_DIR/sstate-cache-$arch"
 done
+
+# Helper function to check if persistent container is running
+check_persistent_container() {
+    local arch=$1
+    local container_name="yocto-builder-$arch"
+    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        return 0  # Container is running
+    else
+        return 1  # Container is not running
+    fi
+}
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║   Building Qt5 Hello World for Multiple Architectures      ║"
@@ -85,10 +106,23 @@ build_and_package() {
     # Create build directory
     mkdir -p "$BUILD_DIR/conf"
     docker volume create "$YOCTO_TMP_VOLUME" >/dev/null 2>&1 || true
-    docker run --rm --user root \
-        --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/mnt,volume-nocopy" \
-        yocto-qt-builder:$ARCH_NAME \
-        chown -R yocto:yocto /mnt
+
+    # Pre-initialize cache volumes with proper permissions (ephemeral or persistent container)
+    CONTAINER_NAME="yocto-builder-$ARCH_NAME"
+    if [ "$USE_PERSISTENT_CONTAINER" = "1" ] && check_persistent_container "$ARCH_NAME"; then
+        echo "   📦 Fixing cache permissions in persistent container: $CONTAINER_NAME"
+        docker exec "$CONTAINER_NAME" sudo bash -c "chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME 2>/dev/null && \
+                                                     chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME 2>/dev/null" || true
+    else
+        # For ephemeral: fix permissions on both cache volumes (already exist as mount points)
+        docker run --rm --user root \
+            --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
+            -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
+            yocto-qt-builder:$ARCH_NAME \
+            bash -c "chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME && \
+                     chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME && \
+                     echo '✅ Cache volumes initialized'"
+    fi
 
     # Copy bblayers.conf
     cp "$SCRIPT_DIR/build/conf/bblayers.conf" "$BUILD_DIR/conf/" 2>/dev/null || \
@@ -124,149 +158,61 @@ EOF
     TEMP_ARTIFACTS=$(mktemp -d)
     trap "rm -rf $TEMP_ARTIFACTS" EXIT
 
-    # Run build in Docker
+    # Run build in Docker (ephemeral or persistent container)
     # Pass VERACODE credentials via environment (not stored in image/container)
-    docker run --rm \
-        -m 14g \
-        --memory-swap 16g \
-        -e VERACODE_API_ID \
-        -e VERACODE_API_KEY \
-        -v "$SCRIPT_DIR:/home/yocto/project" \
-        -v "$TEMP_ARTIFACTS:/tmp/artifacts" \
-        -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
-        -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
-        --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
-        "$DOCKER_IMAGE" \
-        bash -c "
-            # Fix permissions on Yocto TMPDIR and SSTATE cache volumes
-            sudo chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc
-            sudo chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc
-            sudo chown -R yocto:yocto /home/yocto/cache/sstate-cache-$ARCH_NAME
-            sudo chmod -R 755 /home/yocto/cache/sstate-cache-$ARCH_NAME
 
-            cd /tmp
-            mkdir -p yocto-build-$ARCH_NAME
-            cd yocto-build-$ARCH_NAME
+    # Determine container execution method
+    CONTAINER_NAME="yocto-builder-$ARCH_NAME"
+    if [ "$USE_PERSISTENT_CONTAINER" = "1" ] && check_persistent_container "$ARCH_NAME"; then
+        echo "📦 Using persistent container: $CONTAINER_NAME"
+        # For persistent containers, create /tmp/artifacts in container or use a pre-mounted volume
+        docker exec -e VERACODE_API_ID -e VERACODE_API_KEY "$CONTAINER_NAME" \
+            mkdir -p /tmp/artifacts
+        docker exec -e VERACODE_API_ID -e VERACODE_API_KEY "$CONTAINER_NAME" \
+            bash /home/yocto/project/BUILD_YOCTO_INTERNAL.sh "$ARCH_NAME" "/tmp/artifacts"
+        BUILD_RESULT=$?
+    else
+        # Ephemeral container (default)
+        docker run --rm \
+            -m 14g \
+            --memory-swap 16g \
+            -e VERACODE_API_ID \
+            -e VERACODE_API_KEY \
+            -v "$SCRIPT_DIR:/home/yocto/project" \
+            -v "$TEMP_ARTIFACTS:/tmp/artifacts" \
+            -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
+            -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
+            --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
+            "$DOCKER_IMAGE" \
+            bash /home/yocto/project/BUILD_YOCTO_INTERNAL.sh "$ARCH_NAME" "/tmp/artifacts"
+        BUILD_RESULT=$?
+    fi
 
-            # Setup
-            cp -r /home/yocto/project/build-$ARCH_NAME/conf .
-            source /home/yocto/project/poky/oe-init-build-env . > /dev/null 2>&1
+    if [ $BUILD_RESULT -eq 0 ]; then
+        # ========================================
+        # Package for Veracode SAST (inside container)
+        # ========================================
+        echo ''
+        echo '📦 Running Veracode package command on Yocto recipe...'
+        echo ''
 
-            # Show config
-            echo '=== Build Configuration ==='
-            grep '^MACHINE' conf/local.conf
-            echo ''
-
-            # Build
-            echo '=== Starting Build ==='
-            bitbake hello-world
-
-            BUILD_STATUS=\$?
-            echo ''
-
-            if [ \$BUILD_STATUS -eq 0 ]; then
-                echo '🔍 Searching for binary in Yocto build outputs...'
-
-                BINARY=\"\"
-
-                # Check in image directory (most common for cross-compiled binaries)
-                if [ -z \"\$BINARY\" ]; then
-                    BINARY=\$(find /home/yocto/cache/tmp-$ARCH_NAME-glibc/work -path '*/image/usr/bin/hello-world' -type f 2>/dev/null | head -1)
-                fi
-
-                # Check in package directory
-                if [ -z \"\$BINARY\" ]; then
-                    BINARY=\$(find /home/yocto/cache/tmp-$ARCH_NAME-glibc/work -path '*/package/usr/bin/hello-world' -type f 2>/dev/null | head -1)
-                fi
-
-                # Check in build directory
-                if [ -z \"\$BINARY\" ]; then
-                    BINARY=\$(find /home/yocto/cache/tmp-$ARCH_NAME-glibc/work -path '*/build/hello-world' -type f 2>/dev/null | head -1)
-                fi
-
-                # Fallback: any ELF file named hello-world in the build tree
-                if [ -z \"\$BINARY\" ]; then
-                    for F in \$(find /home/yocto/cache/tmp-$ARCH_NAME-glibc -type f -name 'hello-world' ! -name '*.so' ! -name '*.a' ! -name '*.o' ! -name '*.ipk' 2>/dev/null); do
-                        if file \"\$F\" | grep -q 'ELF'; then BINARY=\"\$F\"; break; fi
-                    done
-                fi
-
-                # Fallback: extract binary from IPK package
-                if [ -z \"\$BINARY\" ]; then
-                    IPK=\$(find /home/yocto/cache/tmp-$ARCH_NAME-glibc -path '*/deploy/ipk/*/hello-world_*.ipk' -type f 2>/dev/null | grep -v '\\-dbg\\|\\-dev\\|\\-src' | head -1)
-                    if [ -n \"\$IPK\" ]; then
-                        echo \"Extracting binary from IPK: \$IPK\"
-                        EXTRACT_DIR=\$(mktemp -d)
-                        cd \"\$EXTRACT_DIR\"
-                        ar x \"\$IPK\"
-                        if [ -f data.tar.zst ]; then
-                            tar --use-compress-program=unzstd -xf data.tar.zst
-                        elif [ -f data.tar.xz ]; then
-                            tar -xf data.tar.xz
-                        elif [ -f data.tar.gz ]; then
-                            tar -xzf data.tar.gz
-                        fi
-                        FOUND=\$(find \"\$EXTRACT_DIR\" -name 'hello-world' -type f 2>/dev/null | head -1)
-                        if [ -n \"\$FOUND\" ] && file \"\$FOUND\" | grep -q 'ELF'; then
-                            echo \"✅ Extracted ELF binary from IPK\"
-                            cp \"\$FOUND\" /tmp/artifacts/hello-world-$ARCH_NAME
-                            file \"\$FOUND\"
-                            BINARY=\"COPIED_FROM_IPK\"
-                        fi
-                        rm -rf \"\$EXTRACT_DIR\"
-                    fi
-                fi
-
-                if [ -n \"\$BINARY\" ] && [ \"\$BINARY\" != \"COPIED_FROM_IPK\" ] && [ -f \"\$BINARY\" ]; then
-                    echo \"✅ Found binary: \$BINARY\"
-                    cp \"\$BINARY\" /tmp/artifacts/hello-world-$ARCH_NAME
-                    echo '✅ Binary copied to artifacts'
-                    file \"\$BINARY\"
-                elif [ \"\$BINARY\" = \"COPIED_FROM_IPK\" ]; then
-                    echo '✅ Binary already copied to artifacts from IPK'
-                else
-                    echo '❌ Binary not found after successful build'
-                    exit 1
-                fi
-
-                # ========================================
-                # Package for Veracode SAST (inside container)
-                # ========================================
-                echo ''
-                echo '📦 Running Veracode package command on Yocto recipe...'
-                echo ''
-
-                if [ -x /veracode ]; then
-                    # Package Yocto recipe source for SAST analysis
-                    # Pass credentials via environment variables (requires -E flag)
-                    # Use --trust to skip interactive trust prompt in non-interactive environment
-                    export VERACODE_API_ID VERACODE_API_KEY
-
-                    # Create timestamped log file for veracode package output
-                    PACKAGE_LOG=\"/home/yocto/project/veracode-package-\\\$(date +%Y%m%d-%H%M%S).log\"
-
-                    if sudo -E /veracode package \
-                        --source /home/yocto/project/meta-hello-qt/recipes-qt/hello-world \
-                        --type directory \
-                        -o /home/yocto/project/veracode-package \
-                        --trust \
-                        --verbose 2>&1 | tee \"\$PACKAGE_LOG\"; then
-                        echo '✅ Veracode package completed successfully'
-                        echo \"   Log: \$PACKAGE_LOG\"
-                    else
-                        echo '⚠️  Veracode package failed (continuing anyway)'
-                        echo \"   Log: \$PACKAGE_LOG\"
-                    fi
-                else
-                    echo '⚠️  veracode CLI not found at /veracode'
-                fi
-            else
-                echo '❌ Build failed'
-                exit 1
-            fi
-        "
-
-    BUILD_RESULT=$?
+        # Run veracode package inside same container as build
+        if [ "$USE_PERSISTENT_CONTAINER" = "1" ] && check_persistent_container "$ARCH_NAME"; then
+            docker exec -e VERACODE_API_ID -e VERACODE_API_KEY -e ARCH_NAME="$ARCH_NAME" "$CONTAINER_NAME" \
+                bash /home/yocto/project/VERACODE_PACKAGE_INTERNAL.sh
+        else
+            docker run --rm \
+                -e VERACODE_API_ID \
+                -e VERACODE_API_KEY \
+                -e ARCH_NAME="$ARCH_NAME" \
+                -v "$SCRIPT_DIR:/home/yocto/project" \
+                "$DOCKER_IMAGE" \
+                bash /home/yocto/project/VERACODE_PACKAGE_INTERNAL.sh
+        fi
+    else
+        echo '❌ Build failed'
+        exit 1
+    fi
 
     # Copy from temp directory to host
     if [ $BUILD_RESULT -eq 0 ] && [ -f "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" ]; then
