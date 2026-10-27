@@ -70,6 +70,11 @@ case "$COMMAND" in
             fi
         else
             echo "   Creating new container for $ARCH..."
+
+            # Create Docker volumes for tmp cache (works better on macOS Docker Desktop)
+            YOCTO_TMP_VOLUME="yocto-tmp-$ARCH"
+            docker volume create "$YOCTO_TMP_VOLUME" >/dev/null 2>&1 || true
+
             # Build docker create command with architecture-specific mounts
             DOCKER_ARGS=(
                 "create"
@@ -87,11 +92,13 @@ case "$COMMAND" in
             case "$ARCH" in
                 arm64)
                     DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_ARM64:/home/yocto/cache/sstate-cache-arm64")
-                    DOCKER_ARGS+=("-v" "$YOCTO_CACHE_DIR/tmp-arm64-glibc:/home/yocto/cache/tmp-arm64-glibc")
+                    # Use Docker volume for tmp cache (more reliable on macOS)
+                    DOCKER_ARGS+=("-v" "$YOCTO_TMP_VOLUME:/home/yocto/cache/tmp-arm64-glibc")
                     ;;
                 x86-64)
                     DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_X86_64:/home/yocto/cache/sstate-cache-x86-64")
-                    DOCKER_ARGS+=("-v" "$YOCTO_CACHE_DIR/tmp-x86-64-glibc:/home/yocto/cache/tmp-x86-64-glibc")
+                    # Use Docker volume for tmp cache (more reliable on macOS)
+                    DOCKER_ARGS+=("-v" "$YOCTO_TMP_VOLUME:/home/yocto/cache/tmp-x86-64-glibc")
                     ;;
             esac
 
@@ -104,6 +111,7 @@ case "$COMMAND" in
             docker "${DOCKER_ARGS[@]}"
             docker start "$CONTAINER_NAME"
             echo "   ✅ Container created and started ($ARCH)"
+            echo "   📦 Using Docker volume: $YOCTO_TMP_VOLUME"
         fi
         ;;
 

@@ -117,8 +117,13 @@ if [ $BUILD_STATUS -eq 0 ]; then
 
     if [ -n "$BINARY" ] && [ -f "$BINARY" ]; then
         echo "✅ Found binary: $BINARY"
-        cp "$BINARY" "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" && \
+        if cp "$BINARY" "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME"; then
             echo '✅ Binary copied to artifacts'
+            ls -lh "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME"
+        else
+            echo "❌ Failed to copy binary to $TEMP_ARTIFACTS"
+            exit 1
+        fi
         file "$BINARY"
     else
         echo '❌ Binary not found after successful build'

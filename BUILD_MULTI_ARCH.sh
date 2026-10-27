@@ -152,17 +152,25 @@ EOF
             "$DOCKER_IMAGE" \
             bash /home/yocto/project/BUILD_YOCTO_INTERNAL.sh "$ARCH_NAME" "/tmp/artifacts"
         BUILD_RESULT=$?
+
+        # Debug: show what's in the temp artifacts directory
+        echo "   Debug: Checking artifacts directory: $TEMP_ARTIFACTS"
+        ls -lah "$TEMP_ARTIFACTS/" 2>&1 | head -20
     fi
 
-    if [ $BUILD_RESULT -eq 0 ] && [ -f "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" ]; then
-        mkdir -p "$OUTPUT_SUBDIR"
-        cp "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" "$OUTPUT_SUBDIR/hello-world"
-        echo "✅ Binary saved to: $OUTPUT_SUBDIR/hello-world"
-    elif [ $BUILD_RESULT -ne 0 ]; then
-        echo "❌ Build failed with exit code $BUILD_RESULT"
-        exit 1
+    if [ $BUILD_RESULT -eq 0 ]; then
+        # Verify artifact file exists
+        if [ -f "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" ]; then
+            mkdir -p "$OUTPUT_SUBDIR"
+            cp "$TEMP_ARTIFACTS/hello-world-$ARCH_NAME" "$OUTPUT_SUBDIR/hello-world"
+            echo "✅ Binary saved to: $OUTPUT_SUBDIR/hello-world"
+        else
+            echo "❌ Binary not found in artifacts: $TEMP_ARTIFACTS/hello-world-$ARCH_NAME"
+            echo "   Build succeeded but artifact transfer failed"
+            exit 1
+        fi
     else
-        echo "❌ Binary not found in artifacts"
+        echo "❌ Build failed with exit code $BUILD_RESULT"
         exit 1
     fi
 
