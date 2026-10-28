@@ -134,11 +134,16 @@ EOF
     # Determine container execution method
     if [ "$USE_PERSISTENT_CONTAINER" = "1" ] && check_persistent_container "$ARCH_NAME"; then
         echo "📦 Using persistent container: $CONTAINER_NAME"
-        # For persistent containers, create /tmp/artifacts in container
+        # For persistent containers, artifacts go to /tmp/artifacts in container, then copy to host
         docker exec "$CONTAINER_NAME" mkdir -p /tmp/artifacts
         docker exec "$CONTAINER_NAME" \
             bash /home/yocto/project/BUILD_YOCTO_INTERNAL.sh "$ARCH_NAME" "/tmp/artifacts"
         BUILD_RESULT=$?
+
+        # Copy artifacts from container to host temp directory
+        if [ $BUILD_RESULT -eq 0 ]; then
+            docker cp "$CONTAINER_NAME:/tmp/artifacts/hello-world-$ARCH_NAME" "$TEMP_ARTIFACTS/" 2>/dev/null || true
+        fi
     else
         # Ephemeral container (default)
         docker run --rm \
