@@ -71,9 +71,14 @@ case "$COMMAND" in
         else
             echo "   Creating new container for $ARCH..."
 
-            # Create Docker volumes for tmp cache (works better on macOS Docker Desktop)
+            # Create Docker named volumes for all caches (required for case-sensitive filesystems on macOS)
             YOCTO_TMP_VOLUME="yocto-tmp-$ARCH"
+            YOCTO_SSTATE_VOLUME="yocto-sstate-$ARCH"
+            YOCTO_DL_VOLUME="yocto-dl"
+
             docker volume create "$YOCTO_TMP_VOLUME" >/dev/null 2>&1 || true
+            docker volume create "$YOCTO_SSTATE_VOLUME" >/dev/null 2>&1 || true
+            docker volume create "$YOCTO_DL_VOLUME" >/dev/null 2>&1 || true
 
             # Build docker create command with architecture-specific mounts
             DOCKER_ARGS=(
@@ -85,19 +90,17 @@ case "$COMMAND" in
                 "-e" "VERACODE_API_ID"
                 "-e" "VERACODE_API_KEY"
                 "-v" "$SCRIPT_DIR:/home/yocto/project"
-                "-v" "$YOCTO_DL_DIR:/home/yocto/cache/downloads"
+                "-v" "$YOCTO_DL_VOLUME:/home/yocto/cache/downloads"
             )
 
-            # Add architecture-specific cache mounts
+            # Add architecture-specific cache mounts (all as named volumes for case-sensitivity)
             case "$ARCH" in
                 arm64)
-                    DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_ARM64:/home/yocto/cache/sstate-cache-arm64")
-                    # Use Docker volume for tmp cache (more reliable on macOS)
+                    DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_VOLUME:/home/yocto/cache/sstate-cache-arm64")
                     DOCKER_ARGS+=("-v" "$YOCTO_TMP_VOLUME:/home/yocto/cache/tmp-arm64-glibc")
                     ;;
                 x86-64)
-                    DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_X86_64:/home/yocto/cache/sstate-cache-x86-64")
-                    # Use Docker volume for tmp cache (more reliable on macOS)
+                    DOCKER_ARGS+=("-v" "$YOCTO_SSTATE_VOLUME:/home/yocto/cache/sstate-cache-x86-64")
                     DOCKER_ARGS+=("-v" "$YOCTO_TMP_VOLUME:/home/yocto/cache/tmp-x86-64-glibc")
                     ;;
             esac

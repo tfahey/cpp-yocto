@@ -23,13 +23,8 @@ TARGET="${1:-both}"
 # Persistent container mode (optional, default is ephemeral)
 USE_PERSISTENT_CONTAINER="${USE_PERSISTENT_CONTAINER:-0}"
 
-# Create cache and output directories
-mkdir -p "$YOCTO_DL_DIR" "$OUTPUT_DIR"
-
-# Pre-create architecture-specific cache directories
-for arch in arm64 x86-64; do
-    mkdir -p "$YOCTO_CACHE_DIR/sstate-cache-$arch"
-done
+# Create output directory (caches use Docker named volumes for case-sensitivity)
+mkdir -p "$OUTPUT_DIR"
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║   Building Qt5 Hello World for Multiple Architectures      ║"
@@ -78,7 +73,15 @@ build_and_package() {
 
     # Create build directory
     mkdir -p "$BUILD_DIR/conf"
+
+    # Create named volumes for case-sensitive caching on macOS
+    YOCTO_TMP_VOLUME="yocto-tmp-$ARCH_NAME"
+    YOCTO_SSTATE_VOLUME="yocto-sstate-$ARCH_NAME"
+    YOCTO_DL_VOLUME="yocto-dl"
+
     docker volume create "$YOCTO_TMP_VOLUME" >/dev/null 2>&1 || true
+    docker volume create "$YOCTO_SSTATE_VOLUME" >/dev/null 2>&1 || true
+    docker volume create "$YOCTO_DL_VOLUME" >/dev/null 2>&1 || true
 
     # Pre-initialize cache volumes with proper permissions (ephemeral or persistent container)
     CONTAINER_NAME="yocto-builder-$ARCH_NAME"
@@ -87,10 +90,10 @@ build_and_package() {
         docker exec "$CONTAINER_NAME" sudo bash -c "chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME 2>/dev/null && \
                                                      chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME 2>/dev/null" || true
     else
-        # For ephemeral: fix permissions on both cache volumes (already exist as mount points)
+        # For ephemeral: fix permissions on cache volumes using named volumes
         docker run --rm --user root \
             --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
-            -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
+            --mount "type=volume,source=$YOCTO_SSTATE_VOLUME,target=/home/yocto/cache/sstate-cache-$ARCH_NAME,volume-nocopy" \
             "$DOCKER_IMAGE" \
             bash -c "chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME && \
                      chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME"
@@ -145,13 +148,13 @@ EOF
             docker cp "$CONTAINER_NAME:/tmp/artifacts/hello-world-$ARCH_NAME" "$TEMP_ARTIFACTS/" 2>/dev/null || true
         fi
     else
-        # Ephemeral container (default)
+        # Ephemeral container (default) - use named volumes for case-sensitivity on macOS
         docker run --rm \
             -m 14g \
             --memory-swap 16g \
             -v "$SCRIPT_DIR:/home/yocto/project" \
-            -v "$YOCTO_DL_DIR:/home/yocto/cache/downloads" \
-            -v "$YOCTO_SSTATE_DIR:/home/yocto/cache/sstate-cache-$ARCH_NAME" \
+            --mount "type=volume,source=$YOCTO_DL_VOLUME,target=/home/yocto/cache/downloads,volume-nocopy" \
+            --mount "type=volume,source=$YOCTO_SSTATE_VOLUME,target=/home/yocto/cache/sstate-cache-$ARCH_NAME,volume-nocopy" \
             --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
             -v "$TEMP_ARTIFACTS:/tmp/artifacts" \
             "$DOCKER_IMAGE" \
