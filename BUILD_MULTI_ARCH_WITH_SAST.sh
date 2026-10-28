@@ -119,11 +119,12 @@ build_and_package() {
     else
         # For ephemeral: fix permissions on cache volumes using named volumes
         docker run --rm --user root \
+            --mount "type=volume,source=$YOCTO_DL_VOLUME,target=/home/yocto/cache/downloads,volume-nocopy" \
             --mount "type=volume,source=$YOCTO_TMP_VOLUME,target=/home/yocto/cache/tmp-$ARCH_NAME-glibc,volume-nocopy" \
             --mount "type=volume,source=$YOCTO_SSTATE_VOLUME,target=/home/yocto/cache/sstate-cache-$ARCH_NAME,volume-nocopy" \
             yocto-qt-builder:$ARCH_NAME \
-            bash -c "chown -R yocto:yocto /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME && \
-                     chmod -R 755 /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME"
+            bash -c "chown -R yocto:yocto /home/yocto/cache/downloads /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME && \
+                     chmod -R 755 /home/yocto/cache/downloads /home/yocto/cache/tmp-$ARCH_NAME-glibc /home/yocto/cache/sstate-cache-$ARCH_NAME"
     fi
 
     # Copy bblayers.conf
