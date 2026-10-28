@@ -13,6 +13,9 @@ preprocessed-src/sources/*.i
 build/bitbake*.log
 build/bitbake.lock
 
+# Logs
+logs/
+
 # Docker/system
 .DS_Store
 *.swp

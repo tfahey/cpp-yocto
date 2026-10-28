@@ -51,7 +51,9 @@ mkdir -p "$OUTPUT_DIR" || { echo "❌ Failed to create output directory: $OUTPUT
 
 # Create timestamped log file
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-PACKAGE_LOG="/home/yocto/project/veracode-package-$TIMESTAMP.log"
+LOGS_DIR="/home/yocto/project/logs"
+mkdir -p "$LOGS_DIR"
+PACKAGE_LOG="$LOGS_DIR/veracode-package-$TIMESTAMP.log"
 
 echo "📦 Running veracode package..."
 echo "   Log file: $PACKAGE_LOG"
