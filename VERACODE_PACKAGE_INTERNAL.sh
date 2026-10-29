@@ -49,14 +49,16 @@ fi
 # Create output directory
 mkdir -p "$OUTPUT_DIR" || { echo "❌ Failed to create output directory: $OUTPUT_DIR"; exit 1; }
 
-# Create timestamped log file
+# Create timestamped log files
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 LOGS_DIR="/home/yocto/project/logs"
 mkdir -p "$LOGS_DIR"
 PACKAGE_LOG="$LOGS_DIR/veracode-package-$TIMESTAMP.log"
+COMMAND_LOG="$LOGS_DIR/veracode-package-command-$TIMESTAMP.sh"
 
 echo "📦 Running veracode package..."
 echo "   Log file: $PACKAGE_LOG"
+echo "   Command: $COMMAND_LOG"
 echo ""
 
 # Ensure Yocto build tools are in PATH for veracode to access
@@ -84,6 +86,37 @@ echo ''
 
 # Build
 echo '=== Starting Veracode Package ==='
+
+# Log the exact command for manual retesting
+cat > "$COMMAND_LOG" << 'CMDEOF'
+#!/bin/bash
+# Veracode package command for manual retesting
+# Generated at TIMESTAMP_PLACEHOLDER
+# Source: SOURCE_DIR_PLACEHOLDER
+# Output: OUTPUT_DIR_PLACEHOLDER
+
+# Initialize Yocto environment
+cd /home/yocto/project/build-ARCH_PLACEHOLDER
+source /home/yocto/project/poky/oe-init-build-env .
+
+# Run veracode package
+/veracode package \
+    --source SOURCE_DIR_PLACEHOLDER \
+    --type directory \
+    -o OUTPUT_DIR_PLACEHOLDER \
+    --trust \
+    --verbose
+CMDEOF
+
+# Replace placeholders in command log
+sed -i "s|TIMESTAMP_PLACEHOLDER|$TIMESTAMP|g" "$COMMAND_LOG"
+sed -i "s|SOURCE_DIR_PLACEHOLDER|$SOURCE_DIR|g" "$COMMAND_LOG"
+sed -i "s|OUTPUT_DIR_PLACEHOLDER|$OUTPUT_DIR|g" "$COMMAND_LOG"
+sed -i "s|ARCH_PLACEHOLDER|$ARCH_NAME|g" "$COMMAND_LOG"
+
+echo "📝 Command saved for manual retesting:"
+echo "   $COMMAND_LOG"
+echo ""
 
 # Run veracode package with full output to log
 # /veracode will discover and use Yocto build environment from source directory
